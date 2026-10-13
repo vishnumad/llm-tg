@@ -23,7 +23,6 @@ type Deliver = (text: string, parseMode?: "HTML") => Promise<unknown>;
 // Telegram clears a chat action after five seconds.
 const TYPING_INTERVAL_MS = 4_000;
 
-// Answers longer than this are collapsed, so they don't flood a group chat.
 const COLLAPSE_THRESHOLD = 1_000;
 
 function shouldCollapse(markdown: string): boolean {
@@ -33,7 +32,6 @@ function shouldCollapse(markdown: string): boolean {
 /**
  * Deliver markdown as Telegram HTML, falling back to the raw markdown when
  * Telegram rejects the conversion, such as tags crossed by overlapping markers.
- * A collapsed answer stays collapsed either way.
  */
 async function deliverMarkdown(
   markdown: string,
