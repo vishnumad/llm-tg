@@ -32,7 +32,7 @@ Compose reads `.env` at runtime and keeps chat history in the `chats` volume. Ru
 
 ## Usage
 
-The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and replies to its own messages.
+The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and replies to its own messages. Answers over 1000 characters arrive in a collapsed quote, tap to expand.
 
 - `/newchat` - clear history
 - `/compact` - summarize history to save tokens

@@ -1,6 +1,8 @@
 import { type Context, type Filter, GrammyError } from "grammy";
 import { logger } from "../logger";
 import {
+  collapseHtml,
+  escapeHtml,
   MAX_MESSAGE_LENGTH,
   markdownToTelegramHtml,
   splitMarkdown,
@@ -21,13 +23,26 @@ type Deliver = (text: string, parseMode?: "HTML") => Promise<unknown>;
 // Telegram clears a chat action after five seconds.
 const TYPING_INTERVAL_MS = 4_000;
 
+// Answers longer than this are collapsed, so they don't flood a group chat.
+const COLLAPSE_THRESHOLD = 1_000;
+
+function shouldCollapse(markdown: string): boolean {
+  return markdown.trim().length > COLLAPSE_THRESHOLD;
+}
+
 /**
  * Deliver markdown as Telegram HTML, falling back to the raw markdown when
  * Telegram rejects the conversion, such as tags crossed by overlapping markers.
+ * A collapsed answer stays collapsed either way.
  */
-async function deliverMarkdown(markdown: string, deliver: Deliver) {
+async function deliverMarkdown(
+  markdown: string,
+  deliver: Deliver,
+  collapse = false,
+) {
   try {
-    await deliver(markdownToTelegramHtml(markdown), "HTML");
+    const html = markdownToTelegramHtml(markdown);
+    await deliver(collapse ? collapseHtml(html) : html, "HTML");
   } catch (error) {
     if (
       !(error instanceof GrammyError) ||
@@ -36,7 +51,11 @@ async function deliverMarkdown(markdown: string, deliver: Deliver) {
       throw error;
     }
     logger.info("reply.html_rejected", { description: error.description });
-    await deliver(markdown);
+    if (collapse) {
+      await deliver(collapseHtml(escapeHtml(markdown)), "HTML");
+    } else {
+      await deliver(markdown);
+    }
   }
 }
 
@@ -56,19 +75,25 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
     },
 
     async send(markdown) {
+      const collapse = shouldCollapse(markdown);
       const [first, ...rest] = splitMarkdown(markdown);
-      await deliverMarkdown(first, (text, parse_mode) =>
-        ctx.reply(text, {
-          parse_mode,
-          reply_parameters: {
-            message_id: ctx.msg.message_id,
-            allow_sending_without_reply: true,
-          },
-        }),
+      await deliverMarkdown(
+        first,
+        (text, parse_mode) =>
+          ctx.reply(text, {
+            parse_mode,
+            reply_parameters: {
+              message_id: ctx.msg.message_id,
+              allow_sending_without_reply: true,
+            },
+          }),
+        collapse,
       );
       for (const chunk of rest) {
-        await deliverMarkdown(chunk, (text, parse_mode) =>
-          ctx.reply(text, { parse_mode }),
+        await deliverMarkdown(
+          chunk,
+          (text, parse_mode) => ctx.reply(text, { parse_mode }),
+          collapse,
         );
       }
     },
@@ -109,7 +134,11 @@ export async function guestReplier(
 
     send(markdown) {
       const [first, ...rest] = splitMarkdown(markdown, MAX_MESSAGE_LENGTH - 2);
-      return deliverMarkdown(rest.length > 0 ? `${first}\n…` : first, edit);
+      return deliverMarkdown(
+        rest.length > 0 ? `${first}\n…` : first,
+        edit,
+        shouldCollapse(markdown),
+      );
     },
 
     // Once the answer is in, a notice would overwrite it.

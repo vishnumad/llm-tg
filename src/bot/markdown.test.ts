@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { markdownToTelegramHtml, splitMarkdown } from "./markdown";
+import {
+  collapseHtml,
+  markdownToTelegramHtml,
+  splitMarkdown,
+} from "./markdown";
 
 describe("markdownToTelegramHtml", () => {
   test.each([
@@ -158,6 +162,22 @@ describe("markdownToTelegramHtml", () => {
     ],
   ])("renders %s", (_, input, expected) => {
     expect(markdownToTelegramHtml(input)).toBe(expected);
+  });
+});
+
+describe("collapseHtml", () => {
+  test("wraps the HTML in an expandable blockquote, keeping its formatting", () => {
+    expect(collapseHtml("<b>Title</b>\n• <code>x</code>")).toBe(
+      "<blockquote expandable><b>Title</b>\n• <code>x</code></blockquote>",
+    );
+  });
+
+  test("marks the lines of a quote inside instead of nesting it", () => {
+    expect(
+      collapseHtml(markdownToTelegramHtml("Intro\n> first\n> *second*\nEnd")),
+    ).toBe(
+      "<blockquote expandable>Intro\n▎ first\n▎ <i>second</i>\nEnd</blockquote>",
+    );
   });
 });
 

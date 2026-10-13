@@ -2,7 +2,7 @@ export const MAX_MESSAGE_LENGTH = 4096;
 
 const FENCE = "```";
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -48,6 +48,19 @@ export function markdownToTelegramHtml(markdown: string): string {
     });
 
   return restore(html).trim();
+}
+
+/**
+ * Fold rendered HTML into one expandable blockquote, so a long answer shows
+ * only its first few lines until tapped. Telegram can't nest blockquotes, so
+ * quotes inside it mark each line with a bar instead.
+ */
+export function collapseHtml(html: string): string {
+  const flattened = html.replace(
+    /<blockquote>([\s\S]*?)<\/blockquote>/g,
+    (_, quote: string) => quote.replace(/^/gm, "▎ "),
+  );
+  return `<blockquote expandable>${flattened}</blockquote>`;
 }
 
 function findCut(window: string): number {

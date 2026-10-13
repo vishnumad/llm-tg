@@ -120,6 +120,49 @@ describe("handleMessage", () => {
     expect(plain.parse_mode).toBeUndefined();
   });
 
+  test("collapses a long answer into an expandable blockquote", async () => {
+    generateText.mockResolvedValueOnce(
+      modelAnswer(`**Summary**\n\n${"word ".repeat(250)}`),
+    );
+
+    await handleMessage(gCommand(uniqueChatId(), "hi"));
+
+    const [{ text, parse_mode }] = payloadsOf("sendMessage");
+    expect(parse_mode).toBe("HTML");
+    expect(text).toStartWith("<blockquote expandable><b>Summary</b>\n\nword");
+    expect(text).toEndWith("word</blockquote>");
+  });
+
+  test("collapses every message of an answer split in parts", async () => {
+    generateText.mockResolvedValueOnce(modelAnswer("word ".repeat(1_000)));
+
+    await handleMessage(gCommand(uniqueChatId(), "hi"));
+
+    const texts = payloadsOf("sendMessage").map((payload) => payload.text);
+    expect(texts).toHaveLength(2);
+    for (const text of texts) {
+      expect(text).toStartWith("<blockquote expandable>");
+      expect(text).toEndWith("</blockquote>");
+    }
+  });
+
+  test("keeps a collapsed answer collapsed when Telegram rejects the HTML", async () => {
+    failCall = ({ payload }) =>
+      String(payload.text).includes("<s>")
+        ? "Bad Request: can't parse entities: Unmatched end tag"
+        : undefined;
+    const answer = `~~old **price~~ new** <3 ${"word ".repeat(250)}`.trim();
+    generateText.mockResolvedValueOnce(modelAnswer(answer));
+
+    await handleMessage(gCommand(uniqueChatId(), "hi"));
+
+    const [, fallback] = payloadsOf("sendMessage");
+    expect(fallback).toMatchObject({
+      text: `<blockquote expandable>${answer.replace("<", "&lt;")}</blockquote>`,
+      parse_mode: "HTML",
+    });
+  });
+
   test("tells the chat when no answer could be generated", async () => {
     generateText.mockRejectedValueOnce(new Error("rate limited"));
 
@@ -187,7 +230,9 @@ describe("handleGuestMessage", () => {
     await handleGuestMessage(guestMention(uniqueChatId(), 1));
 
     const [{ text }] = payloadsOf("editMessageText");
-    expect((text as string).length).toBeLessThanOrEqual(4096);
-    expect(text).toEndWith("\n…");
+    const visible = (text as string).replace(/<[^>]+>/g, "");
+    expect(visible.length).toBeLessThanOrEqual(4096);
+    expect(text).toStartWith("<blockquote expandable>");
+    expect(text).toEndWith("\n…</blockquote>");
   });
 });
