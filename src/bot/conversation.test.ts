@@ -169,8 +169,29 @@ describe("handleMessage", () => {
     await handleMessage(gCommand(uniqueChatId(), "hi"));
 
     expect(payloadsOf("sendMessage")).toMatchObject([
-      { text: "Couldn't generate a response" },
+      {
+        text: "Couldn't generate a response\n<blockquote expandable>rate limited</blockquote>",
+        parse_mode: "HTML",
+      },
     ]);
+  });
+
+  test("escapes the error and clips it to fit one message", async () => {
+    generateText.mockRejectedValueOnce(
+      new Error(`Request too large for <model> ${"x".repeat(5_000)}`),
+    );
+
+    await handleMessage(gCommand(uniqueChatId(), "hi"));
+
+    const [{ text }] = payloadsOf("sendMessage");
+    expect(text).toStartWith(
+      "Couldn't generate a response\n<blockquote expandable>Request too large for &lt;model&gt; x",
+    );
+    expect(text).toEndWith("x…</blockquote>");
+    const visible = (text as string)
+      .replace(/<[^>]+>/g, "")
+      .replace(/&lt;|&gt;/g, "<");
+    expect(visible).toHaveLength(4096);
   });
 
   test("doesn't blame the model when the answer can't be delivered", async () => {
@@ -221,6 +242,20 @@ describe("handleGuestMessage", () => {
     expect(payloadsOf("editMessageText")).toMatchObject([
       { inline_message_id: "inline", text: "first", parse_mode: "HTML" },
       { inline_message_id: "inline", text: "second", parse_mode: "HTML" },
+    ]);
+  });
+
+  test("shows the error in place of the placeholder", async () => {
+    generateText.mockRejectedValueOnce(new Error("rate limited"));
+
+    await handleGuestMessage(guestMention(uniqueChatId(), 1));
+
+    expect(payloadsOf("editMessageText")).toMatchObject([
+      {
+        inline_message_id: "inline",
+        text: "Couldn't generate a response\n<blockquote expandable>rate limited</blockquote>",
+        parse_mode: "HTML",
+      },
     ]);
   });
 

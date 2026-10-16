@@ -50,7 +50,10 @@ async function respond(
     );
   } catch (error) {
     log.error("conversation.failed", error);
-    await replier.notice("Couldn't generate a response");
+    await replier.notice(
+      "Couldn't generate a response",
+      error instanceof Error ? error.message : String(error),
+    );
     return;
   }
 

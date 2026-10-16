@@ -14,8 +14,11 @@ export type Replier = {
   whileTyping<T>(work: () => Promise<T>): Promise<T>;
   /** Deliver the model's answer, written in markdown. */
   send(markdown: string): Promise<unknown>;
-  /** Plain text outside the answer, such as errors and compaction notices. */
-  notice(text: string): Promise<unknown>;
+  /**
+   * Plain text outside the answer, such as errors and compaction notices,
+   * with optional detail tucked into an expandable quote below it.
+   */
+  notice(text: string, detail?: string): Promise<unknown>;
 };
 
 type Deliver = (text: string, parseMode?: "HTML") => Promise<unknown>;
@@ -57,6 +60,25 @@ async function deliverMarkdown(
   }
 }
 
+/** Deliver a notice, folding its detail into an expandable quote. */
+function deliverNotice(
+  text: string,
+  detail: string | undefined,
+  deliver: Deliver,
+) {
+  if (!detail) {
+    return deliver(text);
+  }
+  // Telegram limits the visible text, so only the detail is clipped to fit.
+  const room = MAX_MESSAGE_LENGTH - text.length - 1;
+  const clipped =
+    detail.length > room ? `${detail.slice(0, room - 1)}…` : detail;
+  return deliver(
+    `${escapeHtml(text)}\n<blockquote expandable>${escapeHtml(clipped)}</blockquote>`,
+    "HTML",
+  );
+}
+
 export function chatReplier(ctx: Filter<Context, "message">): Replier {
   return {
     async whileTyping(work) {
@@ -96,7 +118,10 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
       }
     },
 
-    notice: (text) => ctx.reply(text),
+    notice: (text, detail) =>
+      deliverNotice(text, detail, (text, parse_mode) =>
+        ctx.reply(text, { parse_mode }),
+      ),
   };
 }
 
@@ -140,9 +165,9 @@ export async function guestReplier(
     },
 
     // Once the answer is in, a notice would overwrite it.
-    notice: async (text) => {
+    notice: async (text, detail) => {
       if (!answered) {
-        await edit(text);
+        await deliverNotice(text, detail, edit);
       }
     },
   };
