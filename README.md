@@ -41,5 +41,5 @@ The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and re
 
 ## BotFather settings
 
-- **Guest Mode** (Bot Settings -> Guest Mode) lets it answer `@mentions` in chats it isn't in. Note: The bot can only reply once per message and long answers get truncated. Commands don't reach it there, except `@YourBot /compact`.
+- **Guest Mode** (Bot Settings -> Guest Mode) lets it answer `@mentions` in chats it isn't in. Note: The bot can only reply once per message and long answers get truncated.
 - **Access** (Bot Settings -> Access -> Restrict bot usage) controls who can use it. The bot has no built in allowlist.
