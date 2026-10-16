@@ -5,8 +5,8 @@ import {
   generateText,
   type ModelMessage,
   stepCountIs,
+  type ToolContent,
   type ToolModelMessage,
-  type ToolResultPart,
 } from "ai";
 import { config } from "../config";
 import { addUsage, getChat, updateChat } from "./chat-store";
@@ -56,51 +56,26 @@ function buildSystemPrompt(summary: string | undefined): string {
   ].join("\n");
 }
 
-function truncateToolOutput(
-  output: ToolResultPart["output"],
-): ToolResultPart["output"] {
-  switch (output.type) {
-    case "text":
-    case "error-text":
-      return { ...output, value: truncate(output.value, MAX_TOOL_CHARS) };
-    case "json":
-    case "error-json": {
-      const value = JSON.stringify(output.value);
-      return value.length <= MAX_TOOL_CHARS
-        ? output
-        : {
-            type: output.type === "json" ? "text" : "error-text",
-            value: truncate(value, MAX_TOOL_CHARS),
-          };
-    }
-    default:
-      return output;
+function truncateToolResult(part: ToolContent[number]): ToolContent[number] {
+  if (part.type !== "tool-result" || part.output.type !== "text") {
+    return part;
   }
+  const value = truncate(part.output.value, MAX_TOOL_CHARS);
+  return { ...part, output: { type: "text", value } };
 }
 
-/**
- * Shrink a turn's response messages before they join the history, which is
- * re-sent with every later request. Reasoning is dropped, as the model never
- * needs its old thinking, and tool results are truncated.
- */
-export function toHistory(
+function trimForHistory(
   messages: (AssistantModelMessage | ToolModelMessage)[],
 ): ModelMessage[] {
-  return messages.flatMap((message): ModelMessage[] => {
+  return messages.map((message) => {
     if (message.role === "tool") {
-      const content = message.content.map((part) =>
-        part.type === "tool-result"
-          ? { ...part, output: truncateToolOutput(part.output) }
-          : part,
-      );
-      return [{ ...message, content }];
+      return { ...message, content: message.content.map(truncateToolResult) };
     }
-
     if (typeof message.content === "string") {
-      return [message];
+      return message;
     }
     const content = message.content.filter((part) => part.type !== "reasoning");
-    return content.length > 0 ? [{ ...message, content }] : [];
+    return { ...message, content };
   });
 }
 
@@ -133,7 +108,7 @@ export async function generateReply(
   }
 
   updateChat(chatId, (chat) => {
-    chat.history.push(userMessage, ...toHistory(result.response.messages));
+    chat.history.push(userMessage, ...trimForHistory(result.response.messages));
     addUsage(chat, result.totalUsage);
 
     // `usage` covers only the final step, whose input is the whole context;
