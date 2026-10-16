@@ -43,7 +43,9 @@ async function deliverMarkdown(
 ) {
   try {
     const html = markdownToTelegramHtml(markdown);
-    await deliver(collapse ? collapseHtml(html) : html, "HTML");
+    const text = collapse ? collapseHtml(html) : html;
+    logger.info("reply.sending", { collapsed: collapse, text });
+    await deliver(text, "HTML");
   } catch (error) {
     if (
       !(error instanceof GrammyError) ||

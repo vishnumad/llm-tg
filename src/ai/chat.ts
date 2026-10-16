@@ -9,6 +9,7 @@ import {
   type ToolModelMessage,
 } from "ai";
 import { config } from "../config";
+import { logger } from "../logger";
 import { addUsage, getChat, updateChat } from "./chat-store";
 import { MAX_TOOL_CHARS, truncate } from "./transcript";
 import { webSearchTool } from "./web-search";
@@ -94,6 +95,7 @@ export async function generateReply(
     ],
   };
   const { history, summary } = getChat(chatId);
+  const log = logger.child({ chatId, modelId: getModelId(chatId) });
 
   const result = await generateText({
     model: getModel(chatId),
@@ -101,6 +103,22 @@ export async function generateReply(
     messages: [...history, userMessage],
     tools: { googleSearch: webSearchTool },
     stopWhen: stepCountIs(5),
+    onStepFinish: (step) =>
+      log.info("model.step", {
+        finishReason: step.finishReason,
+        rawFinishReason: step.rawFinishReason,
+        toolCalls: step.toolCalls.map((call) => call.toolName),
+        usage: step.usage,
+        text: step.text,
+      }),
+  });
+
+  log.info("model.replied", {
+    finishReason: result.finishReason,
+    rawFinishReason: result.rawFinishReason,
+    usage: result.usage,
+    chars: result.text.length,
+    text: result.text,
   });
 
   if (!result.text.trim()) {
