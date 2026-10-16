@@ -1,7 +1,11 @@
 import { sequentialize } from "@grammyjs/runner";
 import type { Context, Filter } from "grammy";
 import { generateReply } from "../ai/chat";
-import { autoCompact, type CompactionResult } from "../ai/compaction";
+import {
+  autoCompact,
+  type CompactionResult,
+  compactChat,
+} from "../ai/compaction";
 import { logger } from "../logger";
 import { downloadPhotos } from "./photos";
 import { chatReplier, guestReplier, type Replier } from "./replier";
@@ -23,6 +27,21 @@ export function formatCompactionNotice({
     tokens === undefined ? "?" : `~${tokens}`;
 
   return `Compacted conversation history (${approximately(tokensBefore)} → ${approximately(tokensAfter)} tokens). Earlier messages are now a summary.`;
+}
+
+/** Summarize the chat's history on request, reporting the outcome. */
+export async function compactConversation(chatId: number, replier: Replier) {
+  let result: CompactionResult | undefined;
+  try {
+    result = await replier.whileTyping(() => compactChat(chatId));
+  } catch (error) {
+    logger.error("compaction.failed", error, { chatId });
+    return replier.send("Couldn't compact the conversation.");
+  }
+
+  return replier.send(
+    result ? formatCompactionNotice(result) : "Nothing to compact.",
+  );
 }
 
 async function respond(
@@ -83,5 +102,13 @@ export async function handleGuestMessage(
   // Claimed before queueing, as the guest query could expire while an earlier
   // mention in the same chat is still being answered.
   const replier = await guestReplier(ctx);
-  await inChatOrder(ctx, () => respond(ctx, replier, stripBotMention(ctx)));
+  const prompt = stripBotMention(ctx);
+  await inChatOrder(ctx, async () => {
+    // Commands don't reach a bot in guest mode, so this one rides the mention.
+    if (prompt === "/compact") {
+      await compactConversation(ctx.msg.chat.id, replier);
+    } else {
+      await respond(ctx, replier, prompt);
+    }
+  });
 }

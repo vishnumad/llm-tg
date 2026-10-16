@@ -1,10 +1,9 @@
 import type { CommandContext, Context, Filter } from "grammy";
 import { getModelId } from "../ai/chat";
 import { getChat, resetChat, updateChat } from "../ai/chat-store";
-import { type CompactionResult, compactChat } from "../ai/compaction";
 import { config } from "../config";
 import { logger } from "../logger";
-import { formatCompactionNotice } from "./conversation";
+import { compactConversation } from "./conversation";
 import { chatReplier } from "./replier";
 
 type CommandCtx = CommandContext<Filter<Context, "message">>;
@@ -38,19 +37,8 @@ export function handleNewChat(ctx: CommandCtx) {
   return reply(ctx, "Chat history cleared.");
 }
 
-export async function handleCompact(ctx: CommandCtx) {
-  let result: CompactionResult | undefined;
-  try {
-    result = await chatReplier(ctx).whileTyping(() => compactChat(ctx.chat.id));
-  } catch (error) {
-    logger.error("compaction.failed", error, { chatId: ctx.chat.id });
-    return reply(ctx, "Couldn't compact the conversation.");
-  }
-
-  return reply(
-    ctx,
-    result ? formatCompactionNotice(result) : "Nothing to compact.",
-  );
+export function handleCompact(ctx: CommandCtx) {
+  return compactConversation(ctx.chat.id, chatReplier(ctx));
 }
 
 export function handleDebug(ctx: CommandCtx) {

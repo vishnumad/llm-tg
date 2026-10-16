@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Api, Context, type Filter } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
+import { updateChat } from "../ai/chat-store";
 import { generateText, uniqueChatId } from "../test-setup";
 import { handleGuestMessage, handleMessage } from "./conversation";
 
@@ -58,7 +59,7 @@ function gCommand(chatId: number, prompt: string) {
   });
 }
 
-function guestMention(chatId: number, messageId: number) {
+function guestMention(chatId: number, messageId: number, prompt = "hi") {
   return contextFor<Filter<Context, "guest_message">>({
     guest_message: {
       message_id: messageId,
@@ -66,7 +67,7 @@ function guestMention(chatId: number, messageId: number) {
       date: 0,
       chat: { id: chatId, type: "group", title: "Test" },
       from: SAM,
-      text: "@MyBot hi",
+      text: `@MyBot ${prompt}`,
       entities: [{ type: "mention", offset: 0, length: 6 }],
     },
   });
@@ -269,5 +270,33 @@ describe("handleGuestMessage", () => {
     expect(visible.length).toBeLessThanOrEqual(4096);
     expect(text).toStartWith("<blockquote expandable>");
     expect(text).toEndWith("\n…</blockquote>");
+  });
+
+  test("compacts the history on `@MyBot /compact`", async () => {
+    const chatId = uniqueChatId();
+    updateChat(chatId, (chat) => {
+      chat.history.push({ role: "user", content: "hello" });
+      chat.lastContextTokens = 1200;
+    });
+    generateText.mockResolvedValueOnce(modelAnswer("the summary", 950));
+
+    await handleGuestMessage(guestMention(chatId, 1, "/compact"));
+
+    expect(generateText.mock.calls[0][0].prompt).toContain("hello");
+    expect(payloadsOf("editMessageText")).toMatchObject([
+      {
+        inline_message_id: "inline",
+        text: "Compacted conversation history (~1200 → ~10 tokens). Earlier messages are now a summary.",
+      },
+    ]);
+  });
+
+  test("says when there's nothing to compact", async () => {
+    await handleGuestMessage(guestMention(uniqueChatId(), 1, "/compact"));
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(payloadsOf("editMessageText")).toMatchObject([
+      { text: "Nothing to compact." },
+    ]);
   });
 });
