@@ -1,10 +1,10 @@
 import type { ModelMessage, ToolResultPart } from "ai";
 
-const MAX_TOOL_CHARS = 2_000;
+export const MAX_TOOL_CHARS = 2_000;
 
 type ContentPart = Exclude<ModelMessage["content"], string>[number];
 
-function truncate(text: string, maxChars: number): string {
+export function truncate(text: string, maxChars: number): string {
   return text.length <= maxChars
     ? text
     : `${text.slice(0, maxChars)}... [truncated]`;

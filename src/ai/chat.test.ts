@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
 import { generateText, uniqueChatId } from "../test-setup";
-import { generateReply, type UserMessage } from "./chat";
+import { generateReply, toHistory, type UserMessage } from "./chat";
 import { getChat, updateChat } from "./chat-store";
 
 const message: UserMessage = {
@@ -99,5 +99,96 @@ describe("generateReply", () => {
       "empty answer",
     );
     expect(getChat(chatId).history).toEqual([]);
+  });
+});
+
+describe("toHistory", () => {
+  test("drops reasoning, and assistant messages left with nothing else", () => {
+    expect(
+      toHistory([
+        { role: "assistant", content: [{ type: "reasoning", text: "hmm" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: "let me think" },
+            { type: "text", text: "Hi!" },
+          ],
+        },
+      ]),
+    ).toEqual([reply]);
+  });
+
+  test("keeps tool calls and truncates long tool results", () => {
+    const call: ModelMessage = {
+      role: "assistant",
+      content: [
+        {
+          type: "tool-call",
+          toolCallId: "1",
+          toolName: "googleSearch",
+          input: { query: "bun" },
+        },
+      ],
+    };
+
+    expect(
+      toHistory([
+        call,
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "1",
+              toolName: "googleSearch",
+              output: { type: "text", value: "x".repeat(5_000) },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "2",
+              toolName: "googleSearch",
+              output: { type: "json", value: { result: "y".repeat(5_000) } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "3",
+              toolName: "googleSearch",
+              output: { type: "text", value: "short" },
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      call,
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "1",
+            toolName: "googleSearch",
+            output: {
+              type: "text",
+              value: `${"x".repeat(2_000)}... [truncated]`,
+            },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "2",
+            toolName: "googleSearch",
+            output: {
+              type: "text",
+              value: `${`{"result":"${"y".repeat(5_000)}`.slice(0, 2_000)}... [truncated]`,
+            },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "3",
+            toolName: "googleSearch",
+            output: { type: "text", value: "short" },
+          },
+        ],
+      },
+    ]);
   });
 });

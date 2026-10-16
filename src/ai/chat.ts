@@ -1,12 +1,16 @@
 import { createGroq } from "@ai-sdk/groq";
 import {
+  type AssistantModelMessage,
   type FilePart,
   generateText,
   type ModelMessage,
   stepCountIs,
+  type ToolModelMessage,
+  type ToolResultPart,
 } from "ai";
 import { config } from "../config";
 import { addUsage, getChat, updateChat } from "./chat-store";
+import { MAX_TOOL_CHARS, truncate } from "./transcript";
 import { webSearchTool } from "./web-search";
 
 const groq = createGroq({ apiKey: config.GROQ_API_KEY });
@@ -52,6 +56,54 @@ function buildSystemPrompt(summary: string | undefined): string {
   ].join("\n");
 }
 
+function truncateToolOutput(
+  output: ToolResultPart["output"],
+): ToolResultPart["output"] {
+  switch (output.type) {
+    case "text":
+    case "error-text":
+      return { ...output, value: truncate(output.value, MAX_TOOL_CHARS) };
+    case "json":
+    case "error-json": {
+      const value = JSON.stringify(output.value);
+      return value.length <= MAX_TOOL_CHARS
+        ? output
+        : {
+            type: output.type === "json" ? "text" : "error-text",
+            value: truncate(value, MAX_TOOL_CHARS),
+          };
+    }
+    default:
+      return output;
+  }
+}
+
+/**
+ * Shrink a turn's response messages before they join the history, which is
+ * re-sent with every later request. Reasoning is dropped, as the model never
+ * needs its old thinking, and tool results are truncated.
+ */
+export function toHistory(
+  messages: (AssistantModelMessage | ToolModelMessage)[],
+): ModelMessage[] {
+  return messages.flatMap((message): ModelMessage[] => {
+    if (message.role === "tool") {
+      const content = message.content.map((part) =>
+        part.type === "tool-result"
+          ? { ...part, output: truncateToolOutput(part.output) }
+          : part,
+      );
+      return [{ ...message, content }];
+    }
+
+    if (typeof message.content === "string") {
+      return [message];
+    }
+    const content = message.content.filter((part) => part.type !== "reasoning");
+    return content.length > 0 ? [{ ...message, content }] : [];
+  });
+}
+
 export async function generateReply(
   chatId: number,
   { text, context, images }: UserMessage,
@@ -81,7 +133,7 @@ export async function generateReply(
   }
 
   updateChat(chatId, (chat) => {
-    chat.history.push(userMessage, ...result.response.messages);
+    chat.history.push(userMessage, ...toHistory(result.response.messages));
     addUsage(chat, result.totalUsage);
 
     // `usage` covers only the final step, whose input is the whole context;
