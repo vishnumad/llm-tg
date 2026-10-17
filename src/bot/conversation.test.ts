@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Api, Context, type Filter } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
-import { updateChat } from "../ai/chat-store";
+import { getChat, updateChat } from "../ai/chat-store";
 import { generateText, uniqueChatId } from "../test-setup";
 import { handleGuestMessage, handleMessage } from "./conversation";
 
@@ -289,6 +289,43 @@ describe("handleGuestMessage", () => {
         text: "Compacted conversation history (~1200 → ~10 tokens). Earlier messages are now a summary.",
       },
     ]);
+  });
+
+  test("runs other commands too, such as `@MyBot /switchmodel`", async () => {
+    const chatId = uniqueChatId();
+
+    await handleGuestMessage(
+      guestMention(chatId, 1, "/switchmodel chosen-model"),
+    );
+    await handleGuestMessage(guestMention(chatId, 2, "/whichmodel"));
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(payloadsOf("editMessageText")).toMatchObject([
+      { text: "Model set to <code>chosen-model</code>" },
+      { text: "<code>chosen-model</code>" },
+    ]);
+  });
+
+  test("clears the history on `@MyBot /newchat`", async () => {
+    const chatId = uniqueChatId();
+    updateChat(chatId, (chat) => {
+      chat.history.push({ role: "user", content: "hello" });
+    });
+
+    await handleGuestMessage(guestMention(chatId, 1, "/newchat"));
+
+    expect(getChat(chatId).history).toEqual([]);
+    expect(payloadsOf("editMessageText")).toMatchObject([
+      { text: "Chat history cleared." },
+    ]);
+  });
+
+  test("sends unknown commands to the model", async () => {
+    generateText.mockResolvedValueOnce(modelAnswer("no idea"));
+
+    await handleGuestMessage(guestMention(uniqueChatId(), 1, "/whatever"));
+
+    expect(generateText).toHaveBeenCalledTimes(1);
   });
 
   test("says when there's nothing to compact", async () => {

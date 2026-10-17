@@ -1,14 +1,6 @@
 import { run } from "@grammyjs/runner";
 import { Bot } from "grammy";
-import {
-  handleChatInfo,
-  handleCompact,
-  handleDebug,
-  handleNewChat,
-  handleStart,
-  handleSwitchModel,
-  handleWhichModel,
-} from "./bot/commands";
+import { commandHandler, commands } from "./bot/commands";
 import {
   handleGuestMessage,
   handleMessage,
@@ -23,13 +15,9 @@ bot.on("guest_message", handleGuestMessage);
 
 const messages = bot.on("message");
 messages.use(inChatOrder);
-messages.command(["start", "ping"], handleStart);
-messages.command("chatinfo", handleChatInfo);
-messages.command("newchat", handleNewChat);
-messages.command("compact", handleCompact);
-messages.command("debug", handleDebug);
-messages.command("switchmodel", handleSwitchModel);
-messages.command("whichmodel", handleWhichModel);
+for (const [name, command] of Object.entries(commands)) {
+  messages.command(name, commandHandler(command));
+}
 messages.on(["message:text", "message:photo"], handleMessage);
 
 bot.catch(({ error, ctx }) => {

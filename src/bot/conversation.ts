@@ -1,12 +1,9 @@
 import { sequentialize } from "@grammyjs/runner";
 import type { Context, Filter } from "grammy";
 import { generateReply } from "../ai/chat";
-import {
-  autoCompact,
-  type CompactionResult,
-  compactChat,
-} from "../ai/compaction";
+import { autoCompact } from "../ai/compaction";
 import { logger } from "../logger";
+import { formatCompactionNotice, parseGuestCommand } from "./commands";
 import { downloadPhotos } from "./photos";
 import { chatReplier, guestReplier, type Replier } from "./replier";
 import { extractPrompt, stripBotMention } from "./triggers";
@@ -18,31 +15,6 @@ import { extractPrompt, stripBotMention } from "./triggers";
 export const inChatOrder = sequentialize((ctx: Context) =>
   ctx.chat?.id.toString(),
 );
-
-export function formatCompactionNotice({
-  tokensBefore,
-  tokensAfter,
-}: CompactionResult): string {
-  const approximately = (tokens?: number) =>
-    tokens === undefined ? "?" : `~${tokens}`;
-
-  return `Compacted conversation history (${approximately(tokensBefore)} → ${approximately(tokensAfter)} tokens). Earlier messages are now a summary.`;
-}
-
-/** Summarize the chat's history on request, reporting the outcome. */
-export async function compactConversation(chatId: number, replier: Replier) {
-  let result: CompactionResult | undefined;
-  try {
-    result = await replier.whileTyping(() => compactChat(chatId));
-  } catch (error) {
-    logger.error("compaction.failed", error, { chatId });
-    return replier.send("Couldn't compact the conversation.");
-  }
-
-  return replier.send(
-    result ? formatCompactionNotice(result) : "Nothing to compact.",
-  );
-}
 
 async function respond(
   ctx: Filter<Context, "message"> | Filter<Context, "guest_message">,
@@ -104,9 +76,16 @@ export async function handleGuestMessage(
   const replier = await guestReplier(ctx);
   const prompt = stripBotMention(ctx);
   await inChatOrder(ctx, async () => {
-    // Commands don't reach a bot in guest mode, so this one rides the mention.
-    if (prompt === "/compact") {
-      await compactConversation(ctx.msg.chat.id, replier);
+    // Commands don't reach a bot in guest mode, so they ride the mention.
+    const guestCommand = parseGuestCommand(prompt);
+    if (guestCommand) {
+      const { chat, from } = ctx.msg;
+      await guestCommand.command({
+        chat,
+        from,
+        args: guestCommand.args,
+        replier,
+      });
     } else {
       await respond(ctx, replier, prompt);
     }
