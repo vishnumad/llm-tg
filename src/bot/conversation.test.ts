@@ -291,18 +291,12 @@ describe("handleGuestMessage", () => {
     ]);
   });
 
-  test("runs other commands too, such as `@MyBot /switchmodel`", async () => {
-    const chatId = uniqueChatId();
-
-    await handleGuestMessage(
-      guestMention(chatId, 1, "/switchmodel chosen-model"),
-    );
-    await handleGuestMessage(guestMention(chatId, 2, "/whichmodel"));
+  test("answers `@MyBot /whichmodel` without the model", async () => {
+    await handleGuestMessage(guestMention(uniqueChatId(), 1, "/whichmodel"));
 
     expect(generateText).not.toHaveBeenCalled();
     expect(payloadsOf("editMessageText")).toMatchObject([
-      { text: "Model set to <code>chosen-model</code>" },
-      { text: "<code>chosen-model</code>" },
+      { text: "<code>default-model</code>" },
     ]);
   });
 

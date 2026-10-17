@@ -33,12 +33,10 @@ describe("chat store", () => {
     const chatId = uniqueChatId();
     updateChat(chatId, (chat) => {
       chat.history.push({ role: "user", content: "hello" });
-      chat.modelId = "some-model";
     });
 
     expect(readChatFile(chatId)).toEqual({
       history: [{ role: "user", content: "hello" }],
-      modelId: "some-model",
       tokenUsage: { totalInputTokens: 0, totalOutputTokens: 0 },
     });
     expect(readdirSync(config.CHAT_DATA_DIR)).not.toContain(
@@ -73,11 +71,10 @@ describe("chat store", () => {
     ).toBe("not json {{{");
   });
 
-  test("reset clears the conversation but keeps the model selection", () => {
+  test("reset clears the conversation", () => {
     const chatId = uniqueChatId();
     updateChat(chatId, (chat) => {
       chat.history.push({ role: "user", content: "hello" });
-      chat.modelId = "some-model";
       chat.summary = "summary";
       chat.lastContextTokens = 500;
       chat.tokenUsage.totalInputTokens = 100;
@@ -87,7 +84,6 @@ describe("chat store", () => {
 
     const expected = {
       history: [],
-      modelId: "some-model",
       tokenUsage: { totalInputTokens: 0, totalOutputTokens: 0 },
     };
     expect(getChat(chatId)).toEqual(expected);

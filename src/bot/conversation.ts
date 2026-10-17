@@ -3,7 +3,7 @@ import type { Context, Filter } from "grammy";
 import { generateReply } from "../ai/chat";
 import { autoCompact } from "../ai/compaction";
 import { logger } from "../logger";
-import { formatCompactionNotice, parseGuestCommand } from "./commands";
+import { commands, formatCompactionNotice } from "./commands";
 import { downloadPhotos } from "./photos";
 import { chatReplier, guestReplier, type Replier } from "./replier";
 import { extractPrompt, stripBotMention } from "./triggers";
@@ -77,15 +77,9 @@ export async function handleGuestMessage(
   const prompt = stripBotMention(ctx);
   await inChatOrder(ctx, async () => {
     // Commands don't reach a bot in guest mode, so they ride the mention.
-    const guestCommand = parseGuestCommand(prompt);
-    if (guestCommand) {
-      const { chat, from } = ctx.msg;
-      await guestCommand.command({
-        chat,
-        from,
-        args: guestCommand.args,
-        replier,
-      });
+    const command = prompt.startsWith("/") && commands.get(prompt.slice(1));
+    if (command) {
+      await command({ chat: ctx.msg.chat, from: ctx.msg.from, replier });
     } else {
       await respond(ctx, replier, prompt);
     }

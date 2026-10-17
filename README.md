@@ -36,7 +36,6 @@ The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and re
 
 - `/newchat` - clear history
 - `/compact` - summarize history to save tokens
-- `/switchmodel <groq-model-id>` / `/switchmodel default` - change this chat's model
 - `/whichmodel`, `/debug`, `/chatinfo`, `/ping` - info
 
 ## BotFather settings

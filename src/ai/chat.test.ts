@@ -110,12 +110,11 @@ describe("generateReply", () => {
     ]);
   });
 
-  test("sends the chat's model, summary and history", async () => {
+  test("sends the configured model, the chat's summary and history", async () => {
     const chatId = uniqueChatId();
     const earlier: ModelMessage = { role: "user", content: "earlier" };
     updateChat(chatId, (chat) => {
       chat.history.push(earlier);
-      chat.modelId = "chosen-model";
       chat.summary = "they like cats";
     });
     generateText.mockResolvedValueOnce({
@@ -128,7 +127,7 @@ describe("generateReply", () => {
     await generateReply(chatId, message);
 
     const request = generateText.mock.calls[0][0];
-    expect(request.model.modelId).toBe("chosen-model");
+    expect(request.model.modelId).toBe("default-model");
     expect(request.system).toContain(
       "<conversation_summary>\nthey like cats\n</conversation_summary>",
     );

@@ -11,7 +11,6 @@ import { config } from "../config";
 
 export type ChatState = {
   history: ModelMessage[];
-  modelId?: string;
   /** Running summary of everything compacted out of `history`. */
   summary?: string;
   tokenUsage: { totalInputTokens: number; totalOutputTokens: number };
@@ -64,9 +63,8 @@ export function updateChat(chatId: number, update: (chat: ChatState) => void) {
   writeChat(chatId, chat);
 }
 
-/** Start the conversation over, keeping only the chat's model selection. */
 export function resetChat(chatId: number) {
-  const chat = { ...emptyChat(), modelId: getChat(chatId).modelId };
+  const chat = emptyChat();
   chats.set(chatId, chat);
   writeChat(chatId, chat);
 }

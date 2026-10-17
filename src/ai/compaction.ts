@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { config } from "../config";
 import { logger } from "../logger";
-import { getModel } from "./chat";
+import { model } from "./chat";
 import { addUsage, getChat, updateChat } from "./chat-store";
 import { renderTranscript } from "./transcript";
 
@@ -62,7 +62,7 @@ export async function compactChat(
   }
 
   const result = await generateText({
-    model: getModel(chatId),
+    model,
     system: SUMMARY_SYSTEM_PROMPT,
     prompt: buildSummaryPrompt(transcript, summary),
   });

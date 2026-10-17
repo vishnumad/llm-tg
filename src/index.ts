@@ -15,7 +15,7 @@ bot.on("guest_message", handleGuestMessage);
 
 const messages = bot.on("message");
 messages.use(inChatOrder);
-for (const [name, command] of Object.entries(commands)) {
+for (const [name, command] of commands) {
   messages.command(name, commandHandler(command));
 }
 messages.on(["message:text", "message:photo"], handleMessage);

@@ -33,13 +33,7 @@ export type UserMessage = {
   images: FilePart[];
 };
 
-export function getModelId(chatId: number): string {
-  return getChat(chatId).modelId ?? config.GROQ_DEFAULT_MODEL_ID;
-}
-
-export function getModel(chatId: number) {
-  return groq(getModelId(chatId));
-}
+export const model = groq(config.GROQ_DEFAULT_MODEL_ID);
 
 function buildSystemPrompt(summary: string | undefined): string {
   if (!summary) {
@@ -96,7 +90,7 @@ export async function generateReply(
   const { history, summary } = getChat(chatId);
 
   const result = await generateText({
-    model: getModel(chatId),
+    model,
     system: buildSystemPrompt(summary),
     messages: [...history, userMessage],
     tools: { googleSearch: webSearchTool },
