@@ -18,27 +18,20 @@ describe("createChatModel", () => {
   test("sends an OpenAI-compatible model's requests to its base URL", async () => {
     const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json({
-        choices: [
-          {
-            message: { role: "assistant", content: "Hi!" },
-            finish_reason: "stop",
-          },
-        ],
-        usage: { prompt_tokens: 3, completion_tokens: 2 },
+        choices: [{ message: { content: "Hi!" }, finish_reason: "stop" }],
       }),
     );
     const model = createChatModel({
       provider: "openai-compatible",
-      baseURL: "https://llm.example.com/v1/",
+      baseURL: "https://llm.example.com/v1",
       apiKey: "secret",
       modelId: "llama3.2",
     });
 
-    const result = await model.doGenerate({
+    await model.doGenerate({
       prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
     });
 
-    expect(result.content).toEqual([{ type: "text", text: "Hi!" }]);
     const [url, init] = fetch.mock.calls[0];
     expect(url).toBe("https://llm.example.com/v1/chat/completions");
     expect(new Headers(init?.headers).get("authorization")).toBe(

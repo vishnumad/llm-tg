@@ -1,8 +1,8 @@
 import { createGroq } from "@ai-sdk/groq";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { type ChatModelConfig, config } from "../config";
+import { config } from "../config";
 
-export function createChatModel(settings: ChatModelConfig) {
+export function createChatModel(settings: typeof config.chatModel) {
   switch (settings.provider) {
     case "groq":
       return createGroq({ apiKey: settings.apiKey })(settings.modelId);
@@ -15,5 +15,4 @@ export function createChatModel(settings: ChatModelConfig) {
   }
 }
 
-/** Answers chats and writes their summaries. */
 export const model = createChatModel(config.chatModel);
