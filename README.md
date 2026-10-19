@@ -13,12 +13,17 @@ bun run dev           # or `bun run start`
 | Variable | |
 | --- | --- |
 | `TELEGRAM_API_KEY` | Bot token |
-| `GROQ_API_KEY` | Chat model key |
-| `GEMINI_API_KEY` | Web search key |
+| `GROQ_API_KEY` | Chat model key, for Groq |
 | `GROQ_DEFAULT_MODEL_ID` | e.g. `qwen/qwen3-32b` |
+| `OPENAI_COMPATIBLE_BASE_URL` | Or any OpenAI-compatible API instead, e.g. `https://openrouter.ai/api/v1` |
+| `OPENAI_COMPATIBLE_API_KEY` | Its key. Optional, for servers that take none |
+| `OPENAI_COMPATIBLE_MODEL_ID` | e.g. `meta-llama/llama-3.3-70b-instruct` |
+| `GEMINI_API_KEY` | Web search key |
 | `WEB_SEARCH_MODEL_ID` | e.g. `gemini-2.5-flash-lite` |
 | `AUTO_COMPACT_TOKEN_THRESHOLD` | Optional. Summarize history once context exceeds this, e.g. `60000` |
 | `CHAT_DATA_DIR` | Optional. Defaults to `./data/chats` |
+
+For the chat model, fill in either Groq or an OpenAI-compatible API, not both. The model has to support tool calling, which web search runs through.
 
 Checks: `bun test`, `bun run typecheck`, `bun run lint` (`bun run format` to fix).
 

@@ -1,8 +1,8 @@
 import { generateText } from "ai";
 import { config } from "../config";
 import { logger } from "../logger";
-import { model } from "./chat";
 import { addUsage, getChat, updateChat } from "./chat-store";
+import { model } from "./model";
 import { renderTranscript } from "./transcript";
 
 const SUMMARY_SYSTEM_PROMPT = [

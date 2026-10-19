@@ -1,4 +1,3 @@
-import { createGroq } from "@ai-sdk/groq";
 import {
   type AssistantModelMessage,
   type FilePart,
@@ -8,12 +7,10 @@ import {
   type ToolContent,
   type ToolModelMessage,
 } from "ai";
-import { config } from "../config";
 import { addUsage, getChat, updateChat } from "./chat-store";
+import { model } from "./model";
 import { MAX_TOOL_CHARS, truncate } from "./transcript";
 import { webSearchTool } from "./web-search";
-
-const groq = createGroq({ apiKey: config.GROQ_API_KEY });
 
 const SYSTEM_PROMPT = [
   "You are a helpful chat bot in a group chat setting. You will do whatever you can to fulfill the user's request. Don't sass the user, all their needs are legitimate.",
@@ -32,8 +29,6 @@ export type UserMessage = {
   };
   images: FilePart[];
 };
-
-export const model = groq(config.GROQ_DEFAULT_MODEL_ID);
 
 function buildSystemPrompt(summary: string | undefined): string {
   if (!summary) {

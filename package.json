@@ -19,6 +19,7 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.68",
     "@ai-sdk/groq": "^3.0.38",
+    "@ai-sdk/openai-compatible": "^2.0.46",
     "@grammyjs/runner": "^2.0.3",
     "ai": "^6.0.175",
     "grammy": "^1.46.0",

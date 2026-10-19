@@ -28,7 +28,11 @@ await bot.init();
 const runner = run(bot, {
   runner: { fetch: { allowed_updates: ["message", "guest_message"] } },
 });
-logger.info("bot.started", { username: bot.botInfo.username });
+logger.info("bot.started", {
+  username: bot.botInfo.username,
+  provider: config.chatModel.provider,
+  model: config.chatModel.modelId,
+});
 
 const stop = () => runner.stop();
 process.once("SIGINT", stop);

@@ -76,7 +76,7 @@ function debug({ chat, replier }: CommandInput) {
     [
       "## Debug Stats",
       `- Chat: \`${chat.id}\``,
-      `- Model: \`${config.GROQ_DEFAULT_MODEL_ID}\``,
+      `- Model: \`${config.chatModel.modelId}\``,
       `- History: \`${history.length}\` msgs (user \`${count("user")}\`, assistant \`${count("assistant")}\`, tool \`${count("tool")}\`)`,
       `- Context: ${context} (${autoCompaction})`,
       `- Summary: ${summary ? `\`${summary.length}\` chars` : "none"}`,
@@ -86,7 +86,7 @@ function debug({ chat, replier }: CommandInput) {
 }
 
 function whichModel({ replier }: CommandInput) {
-  return replier.send(`\`${config.GROQ_DEFAULT_MODEL_ID}\``);
+  return replier.send(`\`${config.chatModel.modelId}\``);
 }
 
 export const commands = new Map<string, Command>([
