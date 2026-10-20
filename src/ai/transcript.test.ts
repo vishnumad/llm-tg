@@ -34,7 +34,7 @@ test("renders tool calls and their results", () => {
         {
           type: "tool-call",
           toolCallId: "1",
-          toolName: "googleSearch",
+          toolName: "webSearch",
           input: { query: "bun" },
         },
       ],
@@ -45,14 +45,14 @@ test("renders tool calls and their results", () => {
         {
           type: "tool-result",
           toolCallId: "1",
-          toolName: "googleSearch",
+          toolName: "webSearch",
           output: { type: "text", value: "Bun is a runtime" },
         },
       ],
     },
   ];
   expect(renderTranscript(history)).toBe(
-    'assistant: [tool call: googleSearch({"query":"bun"})]\n\ntool: [tool result: googleSearch -> Bun is a runtime]',
+    'assistant: [tool call: webSearch({"query":"bun"})]\n\ntool: [tool result: webSearch -> Bun is a runtime]',
   );
 });
 
@@ -64,14 +64,14 @@ test("truncates long tool results", () => {
         {
           type: "tool-result",
           toolCallId: "1",
-          toolName: "googleSearch",
+          toolName: "webSearch",
           output: { type: "text", value: "x".repeat(5_000) },
         },
       ],
     },
   ];
   expect(renderTranscript(history)).toBe(
-    `tool: [tool result: googleSearch -> ${"x".repeat(2_000)}... [truncated]]`,
+    `tool: [tool result: webSearch -> ${"x".repeat(2_000)}... [truncated]]`,
   );
 });
 
