@@ -11,7 +11,6 @@ export function createTavilyProvider(apiKey: string): SearchProvider {
     name: "tavily",
 
     async search(query, { topic, timeRange } = {}) {
-      // Basic depth is the cheapest search: 1 credit.
       const response = await client.search(query, {
         searchDepth: "basic",
         maxResults: 5,
@@ -32,7 +31,6 @@ export function createTavilyProvider(apiKey: string): SearchProvider {
     },
 
     async read(urls, question) {
-      // Basic depth is the cheapest extract: 1 credit per 5 pages read.
       const response = await client.extract(urls, {
         extractDepth: "basic",
         format: "markdown",
