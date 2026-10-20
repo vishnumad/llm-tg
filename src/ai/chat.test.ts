@@ -55,13 +55,13 @@ describe("generateReply", () => {
     const toolCall = {
       type: "tool-call",
       toolCallId: "1",
-      toolName: "googleSearch",
+      toolName: "webSearch",
       input: { query: "bun" },
     } as const;
     const toolResult = {
       type: "tool-result",
       toolCallId: "1",
-      toolName: "googleSearch",
+      toolName: "webSearch",
     } as const;
     generateText.mockResolvedValueOnce({
       text: "Hi!",

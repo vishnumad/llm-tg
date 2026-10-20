@@ -10,6 +10,8 @@ const dataDir = mkdtempSync(join(tmpdir(), "llm-tg-test-"));
 Object.assign(process.env, {
   TELEGRAM_API_KEY: "test",
   GROQ_API_KEY: "test",
+  SEARCH_PROVIDER: "",
+  TAVILY_API_KEY: "test",
   GEMINI_API_KEY: "test",
   GROQ_DEFAULT_MODEL_ID: "default-model",
   OPENAI_COMPATIBLE_BASE_URL: "",
@@ -21,6 +23,15 @@ Object.assign(process.env, {
 /** Stands in for every model call, so no test can reach a real provider. */
 export const generateText = mock();
 mock.module("ai", () => ({ ...ai, generateText }));
+
+/** Stands in for the Tavily client, so no test can spend search credits. */
+export const tavilySearch = mock();
+export const tavilyExtract = mock();
+export const tavily = mock(() => ({
+  search: tavilySearch,
+  extract: tavilyExtract,
+}));
+mock.module("@tavily/core", () => ({ tavily }));
 
 let lastChatId = 0;
 

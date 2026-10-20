@@ -9,8 +9,8 @@ import {
 } from "ai";
 import { addUsage, getChat, updateChat } from "./chat-store";
 import { model } from "./model";
+import { searchTools } from "./search";
 import { MAX_TOOL_CHARS, truncate } from "./transcript";
-import { webSearchTool } from "./web-search";
 
 const SYSTEM_PROMPT = [
   "You are a helpful chat bot in a group chat setting. You will do whatever you can to fulfill the user's request. Don't sass the user, all their needs are legitimate.",
@@ -88,7 +88,7 @@ export async function generateReply(
     model,
     system: buildSystemPrompt(summary),
     messages: [...history, userMessage],
-    tools: { googleSearch: webSearchTool },
+    tools: searchTools,
     stopWhen: stepCountIs(5),
   });
 

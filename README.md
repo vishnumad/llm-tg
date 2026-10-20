@@ -18,12 +18,16 @@ bun run dev           # or `bun run start`
 | `OPENAI_COMPATIBLE_BASE_URL` | e.g. `https://openrouter.ai/api/v1`, or `http://localhost:11434/v1` for Ollama |
 | `OPENAI_COMPATIBLE_API_KEY` | Optional, for servers that take no key |
 | `OPENAI_COMPATIBLE_MODEL_ID` | e.g. `meta-llama/llama-3.3-70b-instruct` |
-| `GEMINI_API_KEY` | Web search key |
-| `WEB_SEARCH_MODEL_ID` | e.g. `gemini-2.5-flash-lite` |
+| `SEARCH_PROVIDER` | Optional. `tavily` (default) or `gemini` |
+| `TAVILY_API_KEY` | Web search key, for Tavily |
+| `GEMINI_API_KEY` | Web search key, only when `SEARCH_PROVIDER=gemini` |
+| `WEB_SEARCH_MODEL_ID` | Only when `SEARCH_PROVIDER=gemini`, e.g. `gemini-2.5-flash-lite` |
 | `AUTO_COMPACT_TOKEN_THRESHOLD` | Optional. Summarize history once context exceeds this, e.g. `60000` |
 | `CHAT_DATA_DIR` | Optional. Defaults to `./data/chats` |
 
 The chat model comes from Groq, or from an OpenAI-compatible API once `OPENAI_COMPATIBLE_BASE_URL` is set. It has to support tool calling, which web search runs through.
+
+Web search gives the chat model two tools: `webSearch` and `readWebPage`. Each backend lives in `src/ai/search/` and implements the `SearchProvider` interface in `provider.ts`; to add one (e.g. Exa), write a provider file, add its config branch in `src/config.ts`, and add a case in `src/ai/search/index.ts`. Tavily runs on its cheapest settings (basic search, 5 results), and each call logs the credits it used.
 
 Checks: `bun test`, `bun run typecheck`, `bun run lint` (`bun run format` to fix).
 
