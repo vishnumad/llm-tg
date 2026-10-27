@@ -5,6 +5,8 @@ const schema = z.object({
   SEARCH_PROVIDER: z.enum(["tavily", "gemini"]).default("tavily"),
   AUTO_COMPACT_TOKEN_THRESHOLD: z.coerce.number().int().positive().optional(),
   CHAT_DATA_DIR: z.string().default("./data/chats"),
+  MODEL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  DEBUG_LOGGING: z.stringbool().default(false),
 });
 
 const groq = z

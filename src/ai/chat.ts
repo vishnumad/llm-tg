@@ -7,6 +7,8 @@ import {
   type ToolContent,
   type ToolModelMessage,
 } from "ai";
+import { config } from "../config";
+import { logger } from "../logger";
 import { addUsage, getChat, updateChat } from "./chat-store";
 import { model } from "./model";
 import { searchTools } from "./search";
@@ -83,6 +85,12 @@ export async function generateReply(
     ],
   };
   const { history, summary } = getChat(chatId);
+  const log = logger.child({ chatId });
+  log.debug("chat.generating", {
+    historyLength: history.length,
+    hasSummary: summary !== undefined,
+    imageCount: images.length,
+  });
 
   const result = await generateText({
     model,
@@ -90,6 +98,17 @@ export async function generateReply(
     messages: [...history, userMessage],
     tools: searchTools,
     stopWhen: stepCountIs(5),
+    timeout: config.MODEL_TIMEOUT_MS,
+    onStepFinish: (step) =>
+      log.debug("chat.step_finished", {
+        step: step.stepNumber,
+        finishReason: step.finishReason,
+        toolCalls: step.toolCalls.map((call) => call.toolName),
+        textLength: step.text.length,
+        reasoningLength: step.reasoningText?.length ?? 0,
+        inputTokens: step.usage.inputTokens,
+        outputTokens: step.usage.outputTokens,
+      }),
   });
 
   if (!result.text.trim()) {

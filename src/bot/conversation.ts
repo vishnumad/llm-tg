@@ -23,6 +23,9 @@ async function respond(
 ) {
   const { msg } = ctx;
   const log = logger.child({ chatId: msg.chat.id, messageId: msg.message_id });
+  const startedAt = performance.now();
+  const durationMs = () => Math.round(performance.now() - startedAt);
+  log.debug("conversation.started", { promptLength: prompt.length });
 
   let answer: string;
   try {
@@ -40,7 +43,7 @@ async function respond(
       }),
     );
   } catch (error) {
-    log.error("conversation.failed", error);
+    log.error("conversation.failed", error, { durationMs: durationMs() });
     await replier.notice(
       "Couldn't generate a response",
       error instanceof Error ? error.message : String(error),
@@ -49,7 +52,7 @@ async function respond(
   }
 
   await replier.send(answer);
-  log.info("conversation.replied");
+  log.info("conversation.replied", { durationMs: durationMs() });
 
   try {
     const compaction = await autoCompact(msg.chat.id);
@@ -74,6 +77,12 @@ export async function handleGuestMessage(
   // Claimed before queueing, as the guest query could expire while an earlier
   // mention in the same chat is still being answered.
   const replier = await guestReplier(ctx);
+  // Logged before queueing, so a turn stuck behind an earlier one shows up as
+  // this line without a matching conversation.started.
+  logger.debug("guest.placeholder_sent", {
+    chatId: ctx.msg.chat.id,
+    messageId: ctx.msg.message_id,
+  });
   const prompt = stripBotMention(ctx);
   await inChatOrder(ctx, async () => {
     // Commands don't reach a bot in guest mode, so they ride the mention.

@@ -1,7 +1,11 @@
+import { config } from "./config";
+
 type Fields = Record<string, unknown>;
 
 export type Logger = {
   child(context: Fields): Logger;
+  /** Verbose tracing, written only when `DEBUG_LOGGING` is on. */
+  debug(event: string, fields?: Fields): void;
   info(event: string, fields?: Fields): void;
   error(event: string, error: unknown, fields?: Fields): void;
 };
@@ -19,7 +23,11 @@ function serializeError(error: unknown): Fields {
   };
 }
 
-function write(level: "info" | "error", event: string, fields: Fields) {
+function write(
+  level: "debug" | "info" | "error",
+  event: string,
+  fields: Fields,
+) {
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     level,
@@ -37,6 +45,11 @@ function write(level: "info" | "error", event: string, fields: Fields) {
 function createLogger(context: Fields): Logger {
   return {
     child: (extra) => createLogger({ ...context, ...extra }),
+    debug: (event, fields) => {
+      if (config.DEBUG_LOGGING) {
+        write("debug", event, { ...context, ...fields });
+      }
+    },
     info: (event, fields) => write("info", event, { ...context, ...fields }),
     error: (event, error, fields) =>
       write("error", event, {

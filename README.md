@@ -24,6 +24,8 @@ bun run dev           # or `bun run start`
 | `WEB_SEARCH_MODEL_ID` | Only when `SEARCH_PROVIDER=gemini`, e.g. `gemini-2.5-flash-lite` |
 | `AUTO_COMPACT_TOKEN_THRESHOLD` | Optional. Summarize history once context exceeds this, e.g. `60000` |
 | `CHAT_DATA_DIR` | Optional. Defaults to `./data/chats` |
+| `MODEL_TIMEOUT_MS` | Optional. Abandon a chat model call after this long, e.g. `300000`. No timeout by default |
+| `DEBUG_LOGGING` | Optional. `true` to log each model request and step |
 
 The chat model comes from Groq, or from an OpenAI-compatible API once `OPENAI_COMPATIBLE_BASE_URL` is set. It has to support tool calling, which web search runs through.
 

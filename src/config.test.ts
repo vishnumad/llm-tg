@@ -52,6 +52,31 @@ describe("parseConfig", () => {
     );
   });
 
+  test("has no model timeout and no debug logging by default", () => {
+    const config = parseConfig({ ...base, ...groq });
+
+    expect(config.MODEL_TIMEOUT_MS).toBeUndefined();
+    expect(config.DEBUG_LOGGING).toBe(false);
+  });
+
+  test("reads the model timeout and debug logging switch", () => {
+    const config = parseConfig({
+      ...base,
+      ...groq,
+      MODEL_TIMEOUT_MS: "300000",
+      DEBUG_LOGGING: "true",
+    });
+
+    expect(config.MODEL_TIMEOUT_MS).toBe(300_000);
+    expect(config.DEBUG_LOGGING).toBe(true);
+  });
+
+  test("rejects a debug logging value that isn't a boolean", () => {
+    expect(() =>
+      parseConfig({ ...base, ...groq, DEBUG_LOGGING: "maybe" }),
+    ).toThrow(/DEBUG_LOGGING/);
+  });
+
   test("searches with Tavily by default", () => {
     expect(parseConfig({ ...base, ...groq }).search).toEqual({
       provider: "tavily",

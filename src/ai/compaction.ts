@@ -65,6 +65,7 @@ export async function compactChat(
     model,
     system: SUMMARY_SYSTEM_PROMPT,
     prompt: buildSummaryPrompt(transcript, summary),
+    timeout: config.MODEL_TIMEOUT_MS,
   });
 
   const newSummary = result.text.trim();
