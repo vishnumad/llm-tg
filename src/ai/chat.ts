@@ -71,17 +71,25 @@ function trimForHistory(
 }
 
 export type ReplyOptions = {
-  /** Called with the answer so far, each time the model writes more. */
-  onText?: (text: string) => void;
-  /** Aborting it stops the turn and keeps whatever was written so far. */
+  onText?: (textSoFar: string) => void;
+  /** Stops the turn, keeping whatever was written so far. */
   abortSignal?: AbortSignal;
 };
 
-export type Reply = {
-  text: string;
-  /** Whether the turn was cut short through `abortSignal`. */
-  stopped: boolean;
-};
+export type Reply = { text: string; stopped: boolean };
+
+function keepStoppedAnswer(
+  chatId: number,
+  userMessage: ModelMessage,
+  text: string,
+): Reply {
+  if (text.trim()) {
+    updateChat(chatId, (chat) => {
+      chat.history.push(userMessage, { role: "assistant", content: text });
+    });
+  }
+  return { text, stopped: true };
+}
 
 export async function generateReply(
   chatId: number,
@@ -130,28 +138,22 @@ export async function generateReply(
   // call is the model thinking aloud.
   let stepText = "";
   for await (const part of result.fullStream) {
-    if (part.type === "start-step") {
-      stepText = "";
-    } else if (part.type === "text-delta") {
-      stepText += part.text;
-      onText?.(stepText);
-    } else if (part.type === "error") {
-      throw part.error;
-    } else if (part.type === "abort") {
-      // A timeout aborts the stream too, but that's a failure, not a stop.
-      if (!abortSignal?.aborted) {
-        throw new Error(part.reason ?? "The model call was aborted");
-      }
-      log.info("chat.stopped", { textLength: stepText.length });
-      if (stepText.trim()) {
-        updateChat(chatId, (chat) => {
-          chat.history.push(userMessage, {
-            role: "assistant",
-            content: stepText,
-          });
-        });
-      }
-      return { text: stepText, stopped: true };
+    switch (part.type) {
+      case "start-step":
+        stepText = "";
+        break;
+      case "text-delta":
+        stepText += part.text;
+        onText?.(stepText);
+        break;
+      case "error":
+        throw part.error;
+      case "abort":
+        // A timeout aborts the stream too, but that's a failure, not a stop.
+        if (!abortSignal?.aborted) {
+          throw new Error(part.reason ?? "The model call was aborted");
+        }
+        return keepStoppedAnswer(chatId, userMessage, stepText);
     }
   }
 

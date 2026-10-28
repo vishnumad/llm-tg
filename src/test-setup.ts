@@ -20,7 +20,7 @@ Object.assign(process.env, {
   CHAT_DATA_DIR: dataDir,
 });
 
-/** Stand in for every model call, so no test can reach a real provider. */
+/** Stands in for every model call, so no test can reach a real provider. */
 export const generateText = mock();
 export const streamText = mock();
 mock.module("ai", () => ({ ...ai, generateText, streamText }));
@@ -28,20 +28,18 @@ mock.module("ai", () => ({ ...ai, generateText, streamText }));
 type Usage = { inputTokens?: number; outputTokens?: number };
 
 export type FakeStream = {
-  /** Text deltas for each model step. The last step's text is the answer. */
+  /** Text deltas for each model step. */
   steps?: string[][];
   response?: { messages: unknown[] };
   usage?: Usage;
   totalUsage?: Usage;
-  /** Emitted as an error part once the deltas are out. */
   error?: unknown;
-  /** Waited on once the deltas are out, e.g. for the user to press stop. */
   gate?: Promise<unknown>;
 };
 
 /**
- * A `streamText` implementation that plays back the given steps. It ends with
- * an abort part if the call's `abortSignal` fired by the time `gate` settles.
+ * A `streamText` stand-in that plays back `steps`, waits on `gate`, then ends
+ * with an abort if the call's `abortSignal` fired, or else with `error`.
  */
 export function fakeStream({
   steps = [["Hi!"]],

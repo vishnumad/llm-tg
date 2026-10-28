@@ -2,6 +2,10 @@ export const MAX_MESSAGE_LENGTH = 4096;
 
 const FENCE = "```";
 
+function hasOpenFence(markdown: string): boolean {
+  return (markdown.split(FENCE).length - 1) % 2 === 1;
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -96,8 +100,7 @@ export function splitMarkdown(
     let chunk = rest.slice(0, cut);
     rest = rest.slice(cut < window.length ? cut + 1 : cut);
 
-    const fenceCount = chunk.split(FENCE).length - 1;
-    if (fenceCount % 2 === 1) {
+    if (hasOpenFence(chunk)) {
       chunk += `\n${FENCE}`;
       rest = `${FENCE}\n${rest}`;
     }
@@ -108,11 +111,6 @@ export function splitMarkdown(
   return chunks;
 }
 
-/**
- * Close a code block the model is still writing, so a preview shows it as
- * code rather than as raw backticks.
- */
 export function closeOpenFence(markdown: string): string {
-  const fenceCount = markdown.split(FENCE).length - 1;
-  return fenceCount % 2 === 1 ? `${markdown}\n${FENCE}` : markdown;
+  return hasOpenFence(markdown) ? `${markdown}\n${FENCE}` : markdown;
 }

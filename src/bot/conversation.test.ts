@@ -112,6 +112,23 @@ function modelFails(message: string, text = "") {
   modelAnswers(text, { error: new Error(message) });
 }
 
+/** Like `modelAnswers`, but the turn stays open until released. */
+function modelStreams(text: string, options: FakeStream = {}) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  modelAnswers(text, { ...options, gate: promise });
+  return resolve;
+}
+
+/** Give the preview time to show before letting the model finish. */
+async function previewThenFinish(
+  handled: Promise<unknown>,
+  release: () => void,
+) {
+  await Bun.sleep(10);
+  release();
+  await handled;
+}
+
 /** A compaction summary, which still comes from a single model call. */
 function summaryAnswer(text: string, contextTokens: number) {
   const usage = { inputTokens: contextTokens - 10, outputTokens: 10 };
@@ -137,38 +154,29 @@ describe("handleMessage in a group", () => {
         reply_parameters: { message_id: 1, allow_sending_without_reply: true },
       },
     ]);
+  });
+
+  test("shows the answer before the model finishes", async () => {
+    const release = modelStreams("hello");
+
+    const handled = handleMessage(gCommand(uniqueChatId(), "hi"));
+    await Bun.sleep(10);
+    expect(payloadsOf("sendMessage")).toMatchObject([{ text: "hello" }]);
+
+    release();
+    await handled;
     // The preview already shows the finished answer.
+    expect(payloadsOf("sendMessage")).toHaveLength(1);
     expect(payloadsOf("editMessageText")).toEqual([]);
   });
 
-  test("edits the answer in as it streams", async () => {
-    const chatId = uniqueChatId();
-    const done = Promise.withResolvers<void>();
-    streamText.mockImplementationOnce(
-      fakeStream({ steps: [["Hel", "lo"]], gate: done.promise }),
-    );
-
-    const handled = handleMessage(gCommand(chatId, "hi"));
-    await Bun.sleep(0);
-    expect(payloadsOf("sendMessage")).toMatchObject([{ text: "Hel" }]);
-
-    done.resolve();
-    await handled;
-    expect(payloadsOf("editMessageText")).toMatchObject([
-      { chat_id: chatId, message_id: 101, text: "Hello", parse_mode: "HTML" },
-    ]);
-  });
-
   test("closes a code block the model is still writing", async () => {
-    const done = Promise.withResolvers<void>();
-    streamText.mockImplementationOnce(
-      fakeStream({ steps: [["```js\nconst a = 1;"]], gate: done.promise }),
-    );
+    const release = modelStreams("```js\nconst a = 1;");
 
-    const handled = handleMessage(gCommand(uniqueChatId(), "hi"));
-    await Bun.sleep(0);
-    done.resolve();
-    await handled;
+    await previewThenFinish(
+      handleMessage(gCommand(uniqueChatId(), "hi")),
+      release,
+    );
 
     expect(payloadsOf("sendMessage")).toMatchObject([
       { text: "<pre><code>const a = 1;\n</code></pre>" },
@@ -193,9 +201,12 @@ describe("handleMessage in a group", () => {
   });
 
   test("collapses a long answer into an expandable blockquote once done", async () => {
-    modelAnswers(`**Summary**\n\n${"word ".repeat(250)}`);
+    const release = modelStreams(`**Summary**\n\n${"word ".repeat(250)}`);
 
-    await handleMessage(gCommand(uniqueChatId(), "hi"));
+    await previewThenFinish(
+      handleMessage(gCommand(uniqueChatId(), "hi")),
+      release,
+    );
 
     const [preview] = payloadsOf("sendMessage");
     expect(preview.text).toStartWith("<b>Summary</b>");
@@ -206,9 +217,12 @@ describe("handleMessage in a group", () => {
   });
 
   test("spills a long answer into more messages, all collapsed", async () => {
-    modelAnswers("word ".repeat(1_000));
+    const release = modelStreams("word ".repeat(1_000));
 
-    await handleMessage(gCommand(uniqueChatId(), "hi"));
+    await previewThenFinish(
+      handleMessage(gCommand(uniqueChatId(), "hi")),
+      release,
+    );
 
     const sent = payloadsOf("sendMessage");
     expect(sent).toHaveLength(2);
@@ -228,9 +242,12 @@ describe("handleMessage in a group", () => {
         ? "Bad Request: can't parse entities: Unmatched end tag"
         : undefined;
     const answer = `~~old **price~~ new** <3 ${"word ".repeat(250)}`.trim();
-    modelAnswers(answer);
+    const release = modelStreams(answer);
 
-    await handleMessage(gCommand(uniqueChatId(), "hi"));
+    await previewThenFinish(
+      handleMessage(gCommand(uniqueChatId(), "hi")),
+      release,
+    );
 
     const [, fallback] = payloadsOf("editMessageText");
     expect(fallback).toMatchObject({
@@ -252,15 +269,20 @@ describe("handleMessage in a group", () => {
     ]);
   });
 
-  test("replaces a partial answer with the error", async () => {
-    modelFails("connection reset", "Half an ans");
+  test("swaps a partial answer for the error", async () => {
+    const release = modelStreams("Half an ans", {
+      error: new Error("connection reset"),
+    });
 
-    await handleMessage(gCommand(uniqueChatId(), "hi"));
+    await previewThenFinish(
+      handleMessage(gCommand(uniqueChatId(), "hi")),
+      release,
+    );
 
-    expect(payloadsOf("sendMessage")).toMatchObject([{ text: "Half an ans" }]);
-    expect(payloadsOf("editMessageText")).toMatchObject([
+    expect(payloadsOf("deleteMessage")).toMatchObject([{ message_id: 101 }]);
+    expect(payloadsOf("sendMessage")).toMatchObject([
+      { text: "Half an ans" },
       {
-        message_id: 101,
         text: "Couldn't generate a response\n<blockquote expandable>connection reset</blockquote>",
       },
     ]);
@@ -290,11 +312,7 @@ describe("handleMessage in a group", () => {
     await expect(handleMessage(gCommand(uniqueChatId(), "hi"))).rejects.toThrow(
       "chat not found",
     );
-    // Once as the preview, which fails quietly, then as the answer.
-    expect(payloadsOf("sendMessage")).toMatchObject([
-      { text: "hello" },
-      { text: "hello" },
-    ]);
+    expect(payloadsOf("sendMessage")).toMatchObject([{ text: "hello" }]);
   });
 
   test("announces an automatic compaction after the answer", async () => {
@@ -313,9 +331,12 @@ describe("handleMessage in a group", () => {
 describe("handleMessage in a private chat", () => {
   test("streams the answer as a draft, then sends it", async () => {
     const chatId = uniqueChatId();
-    modelAnswers("**hello**");
+    const release = modelStreams("**hello**");
 
-    await handleMessage(gCommand(chatId, "hi", "private"));
+    await previewThenFinish(
+      handleMessage(gCommand(chatId, "hi", "private")),
+      release,
+    );
 
     expect(payloadsOf("sendMessageDraft")).toMatchObject([
       {
@@ -381,10 +402,9 @@ describe("handleGuestMessage", () => {
     first.resolve();
     await handled;
 
-    expect(payloadsOf("editMessageText")).toMatchObject([
-      { inline_message_id: "inline", text: "first", parse_mode: "HTML" },
-      { inline_message_id: "inline", text: "second", parse_mode: "HTML" },
-    ]);
+    // "first" may also show as a preview, so only the order is checked.
+    const texts = payloadsOf("editMessageText").map(({ text }) => text);
+    expect([...new Set(texts)]).toEqual(["first", "second"]);
   });
 
   test("shows the error in place of the placeholder", async () => {
@@ -402,9 +422,14 @@ describe("handleGuestMessage", () => {
   });
 
   test("shows the error in place of a partial answer", async () => {
-    modelFails("connection reset", "Half an ans");
+    const release = modelStreams("Half an ans", {
+      error: new Error("connection reset"),
+    });
 
-    await handleGuestMessage(guestMention(uniqueChatId(), 1));
+    await previewThenFinish(
+      handleGuestMessage(guestMention(uniqueChatId(), 1)),
+      release,
+    );
 
     expect(payloadsOf("editMessageText")).toMatchObject([
       { text: "Half an ans" },
@@ -482,27 +507,6 @@ describe("handleGuestMessage", () => {
     expect(generateText).not.toHaveBeenCalled();
     expect(payloadsOf("editMessageText")).toMatchObject([
       { text: "Nothing to compact." },
-    ]);
-  });
-});
-
-// Last, as turning drafts down is remembered for the rest of the process.
-describe("handleMessage when Telegram turns drafts down", () => {
-  test("falls back to editing a message, now and for later turns", async () => {
-    failCall = ({ method }) =>
-      method === "sendMessageDraft"
-        ? "Bad Request: method is not available"
-        : undefined;
-    modelAnswers("hello");
-    modelAnswers("again");
-
-    await handleMessage(gCommand(uniqueChatId(), "hi", "private"));
-    await handleMessage(gCommand(uniqueChatId(), "hi", "private"));
-
-    expect(payloadsOf("sendMessageDraft")).toHaveLength(1);
-    expect(payloadsOf("sendMessage")).toMatchObject([
-      { text: "hello", reply_parameters: { message_id: 1 } },
-      { text: "again", reply_parameters: { message_id: 1 } },
     ]);
   });
 });

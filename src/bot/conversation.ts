@@ -6,7 +6,6 @@ import { logger } from "../logger";
 import { commands, formatCompactionNotice } from "./commands";
 import { downloadPhotos } from "./photos";
 import {
-  canUseDrafts,
   chatReplier,
   draftReplier,
   guestReplier,
@@ -63,13 +62,11 @@ async function respond(
     return;
   }
 
-  if (!reply.text.trim()) {
-    // Stopped before the model wrote anything, so there's nothing to keep.
+  if (reply.text.trim()) {
+    await stream.finish(reply.text);
+  } else {
     await stream.cancel();
-    log.info("conversation.stopped", { durationMs: durationMs() });
-    return;
   }
-  await stream.finish(reply.text);
   log.info(reply.stopped ? "conversation.stopped" : "conversation.replied", {
     durationMs: durationMs(),
   });
@@ -86,12 +83,11 @@ async function respond(
 
 export async function handleMessage(ctx: Filter<Context, "message">) {
   const prompt = extractPrompt(ctx);
-  if (prompt === undefined) {
-    return;
+  if (prompt !== undefined) {
+    const replier =
+      ctx.chat.type === "private" ? draftReplier(ctx) : chatReplier(ctx);
+    await respond(ctx, replier, prompt);
   }
-  const streamsDrafts = ctx.chat.type === "private" && canUseDrafts();
-  const replier = streamsDrafts ? draftReplier(ctx) : chatReplier(ctx);
-  await respond(ctx, replier, prompt);
 }
 
 export async function handleGuestMessage(

@@ -17,16 +17,17 @@ function telegramError(error_code: number, description: string, retry = 0) {
 }
 
 describe("createPreview", () => {
-  test("renders the first text at once and only the newest after that", async () => {
+  test("renders the first text straight away, then only the newest", async () => {
     const rendered: string[] = [];
     const preview = createPreview(async (markdown) => {
       rendered.push(markdown);
     }, 20);
 
     preview.update("a");
+    await Bun.sleep(5);
     preview.update("ab");
     preview.update("abc");
-    await Bun.sleep(50);
+    await Bun.sleep(40);
     await preview.stop();
 
     expect(rendered).toEqual(["a", "abc"]);
@@ -59,13 +60,28 @@ describe("createPreview", () => {
     }, 10_000);
 
     preview.update("a");
+    await Bun.sleep(5);
     preview.update("ab");
     const startedAt = Date.now();
     await preview.stop();
     preview.update("abc");
+    await Bun.sleep(5);
 
     expect(Date.now() - startedAt).toBeLessThan(1_000);
     expect(rendered).toEqual(["a"]);
+  });
+
+  test("ignores blank text", async () => {
+    const rendered: string[] = [];
+    const preview = createPreview(async (markdown) => {
+      rendered.push(markdown);
+    }, 0);
+
+    preview.update(" \n");
+    await Bun.sleep(5);
+    await preview.stop();
+
+    expect(rendered).toEqual([]);
   });
 
   test("retries after Telegram's rate limit", async () => {
