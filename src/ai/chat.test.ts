@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import type { ModelMessage } from "ai";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { ModelMessage, ToolExecutionOptions, ToolSet } from "ai";
 import { generateText, uniqueChatId } from "../test-setup";
 import { generateReply, type UserMessage } from "./chat";
 import { getChat, updateChat } from "./chat-store";
+import { imageProvider } from "./image";
+import type { ImageProvider } from "./image/provider";
 
 const message: UserMessage = {
   text: "hello",
@@ -158,5 +160,51 @@ describe("generateReply", () => {
       "empty answer",
     );
     expect(getChat(chatId).history).toEqual([]);
+  });
+
+  test("offers image generation only when the reply can send images", async () => {
+    const answer = {
+      text: "Hi!",
+      response: { messages: [reply] },
+      usage: { inputTokens: 1, outputTokens: 1 },
+      totalUsage: { inputTokens: 1, outputTokens: 1 },
+    };
+    generateText.mockResolvedValue(answer);
+
+    await generateReply(uniqueChatId(), message);
+    await generateReply(uniqueChatId(), message, async () => {});
+
+    const [withoutImages, withImages] = generateText.mock.calls.map(
+      ([request]) => Object.keys(request.tools),
+    );
+    expect(withoutImages).not.toContain("generateImage");
+    expect(withImages).toContain("generateImage");
+  });
+
+  test("accepts an empty answer once the model has sent an image", async () => {
+    const chatId = uniqueChatId();
+    const image = new Uint8Array([1, 2, 3]);
+    spyOn(imageProvider as ImageProvider, "generate").mockResolvedValueOnce(
+      image,
+    );
+    const sendImage = mock(async () => {});
+    generateText.mockImplementationOnce(
+      async ({ tools }: { tools: ToolSet }) => {
+        await tools.generateImage.execute?.({ prompt: "a fox" }, {
+          toolCallId: "1",
+          messages: [],
+        } as ToolExecutionOptions);
+        return {
+          text: "",
+          response: { messages: [reply] },
+          usage: { inputTokens: 1, outputTokens: 1 },
+          totalUsage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
+
+    expect(await generateReply(chatId, message, sendImage)).toBe("");
+    expect(sendImage).toHaveBeenCalledWith(image);
+    expect(getChat(chatId).history).toHaveLength(2);
   });
 });

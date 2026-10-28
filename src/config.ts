@@ -3,6 +3,7 @@ import { z } from "zod";
 const schema = z.object({
   TELEGRAM_API_KEY: z.string(),
   SEARCH_PROVIDER: z.enum(["tavily", "gemini"]).default("tavily"),
+  IMAGE_PROVIDER: z.enum(["perchance"]).optional(),
   AUTO_COMPACT_TOKEN_THRESHOLD: z.coerce.number().int().positive().optional(),
   CHAT_DATA_DIR: z.string().default("./data/chats"),
   MODEL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
@@ -54,6 +55,17 @@ const gemini = z
     },
   }));
 
+const perchance = z
+  .object({ PERCHANCE_CHROMIUM_PATH: z.string().optional() })
+  .transform((env) => ({
+    image: {
+      provider: "perchance" as const,
+      executablePath: env.PERCHANCE_CHROMIUM_PATH,
+    },
+  }));
+
+const noImages = z.object({}).transform(() => ({ image: undefined }));
+
 export function parseConfig(processEnv: Record<string, string | undefined>) {
   // Blank values count as unset, so `KEY=` in a .env file falls back to the default.
   const env = Object.fromEntries(
@@ -62,7 +74,13 @@ export function parseConfig(processEnv: Record<string, string | undefined>) {
 
   const chatProvider = env.OPENAI_COMPATIBLE_BASE_URL ? openAICompatible : groq;
   const searchProvider = env.SEARCH_PROVIDER === "gemini" ? gemini : tavily;
-  const parsed = schema.and(chatProvider).and(searchProvider).safeParse(env);
+  const imageProvider =
+    env.IMAGE_PROVIDER === "perchance" ? perchance : noImages;
+  const parsed = schema
+    .and(chatProvider)
+    .and(searchProvider)
+    .and(imageProvider)
+    .safeParse(env);
   if (!parsed.success) {
     throw new Error(
       `Invalid environment variables:\n${z.prettifyError(parsed.error)}`,

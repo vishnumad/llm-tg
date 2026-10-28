@@ -22,6 +22,8 @@ bun run dev           # or `bun run start`
 | `TAVILY_API_KEY` | Web search key, for Tavily |
 | `GEMINI_API_KEY` | Web search key, only when `SEARCH_PROVIDER=gemini` |
 | `WEB_SEARCH_MODEL_ID` | Only when `SEARCH_PROVIDER=gemini`, e.g. `gemini-2.5-flash-lite` |
+| `IMAGE_PROVIDER` | Optional. `perchance` to let the chat model make images |
+| `PERCHANCE_CHROMIUM_PATH` | Optional. Chromium binary for Perchance; the Docker image sets it |
 | `AUTO_COMPACT_TOKEN_THRESHOLD` | Optional. Summarize history once context exceeds this, e.g. `60000` |
 | `CHAT_DATA_DIR` | Optional. Defaults to `./data/chats` |
 | `MODEL_TIMEOUT_MS` | Optional. Abandon a chat model call after this long, e.g. `300000`. No timeout by default |
@@ -30,6 +32,10 @@ bun run dev           # or `bun run start`
 The chat model comes from Groq, or from an OpenAI-compatible API once `OPENAI_COMPATIBLE_BASE_URL` is set. It has to support tool calling, which web search runs through.
 
 Web search gives the chat model two tools: `webSearch` and `readWebPage`. Each backend lives in `src/ai/search/` and implements the `SearchProvider` interface in `provider.ts`; to add one (e.g. Exa), write a provider file, add its config branch in `src/config.ts`, and add a case in `src/ai/search/index.ts`.
+
+Image generation gives the chat model a `generateImage` tool, which sends the image to the chat. Guest-mode replies can't carry photos, so they don't get it. Backends live in `src/ai/image/` and implement the `ImageProvider` interface in `provider.ts`; adding one works like adding a search backend.
+
+Perchance has no API, so its provider drives a headless Chromium through the endpoints of Perchance's own pages, one image at a time. This is unofficial and can break whenever Perchance changes its site. Perchance doesn't want its ad-funded generators used from servers, so use it at your own risk. Outside Docker, install a browser with `bunx playwright-core install chromium`.
 
 Checks: `bun test`, `bun run typecheck`, `bun run lint` (`bun run format` to fix).
 

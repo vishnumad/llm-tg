@@ -118,4 +118,34 @@ describe("parseConfig", () => {
       parseConfig({ ...base, ...groq, SEARCH_PROVIDER: "bing" }),
     ).toThrow(/SEARCH_PROVIDER/);
   });
+
+  test("makes no images by default", () => {
+    expect(parseConfig({ ...base, ...groq }).image).toBeUndefined();
+  });
+
+  test("makes images with Perchance once selected", () => {
+    expect(
+      parseConfig({ ...base, ...groq, IMAGE_PROVIDER: "perchance" }).image,
+    ).toEqual({ provider: "perchance", executablePath: undefined });
+  });
+
+  test("reads the Chromium path for Perchance", () => {
+    const { image } = parseConfig({
+      ...base,
+      ...groq,
+      IMAGE_PROVIDER: "perchance",
+      PERCHANCE_CHROMIUM_PATH: "/usr/bin/chromium",
+    });
+
+    expect(image).toEqual({
+      provider: "perchance",
+      executablePath: "/usr/bin/chromium",
+    });
+  });
+
+  test("rejects an unknown image provider", () => {
+    expect(() =>
+      parseConfig({ ...base, ...groq, IMAGE_PROVIDER: "dall-e" }),
+    ).toThrow(/IMAGE_PROVIDER/);
+  });
 });
