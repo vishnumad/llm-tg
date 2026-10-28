@@ -1,9 +1,9 @@
 import {
   type AssistantModelMessage,
   type FilePart,
-  generateText,
   type ModelMessage,
   stepCountIs,
+  streamText,
   type ToolContent,
   type ToolModelMessage,
 } from "ai";
@@ -70,10 +70,24 @@ function trimForHistory(
   });
 }
 
+export type ReplyOptions = {
+  /** Called with the answer so far, each time the model writes more. */
+  onText?: (text: string) => void;
+  /** Aborting it stops the turn and keeps whatever was written so far. */
+  abortSignal?: AbortSignal;
+};
+
+export type Reply = {
+  text: string;
+  /** Whether the turn was cut short through `abortSignal`. */
+  stopped: boolean;
+};
+
 export async function generateReply(
   chatId: number,
   { text, context, images }: UserMessage,
-): Promise<string> {
+  { onText, abortSignal }: ReplyOptions = {},
+): Promise<Reply> {
   const userMessage: ModelMessage = {
     role: "user",
     content: [
@@ -92,13 +106,14 @@ export async function generateReply(
     imageCount: images.length,
   });
 
-  const result = await generateText({
+  const result = streamText({
     model,
     system: buildSystemPrompt(summary),
     messages: [...history, userMessage],
     tools: searchTools,
     stopWhen: stepCountIs(5),
     timeout: config.MODEL_TIMEOUT_MS,
+    abortSignal,
     onStepFinish: (step) =>
       log.debug("chat.step_finished", {
         step: step.stepNumber,
@@ -111,21 +126,56 @@ export async function generateReply(
       }),
   });
 
-  if (!result.text.trim()) {
+  // Only the last step's text is the answer, as text written before a tool
+  // call is the model thinking aloud.
+  let stepText = "";
+  for await (const part of result.fullStream) {
+    if (part.type === "start-step") {
+      stepText = "";
+    } else if (part.type === "text-delta") {
+      stepText += part.text;
+      onText?.(stepText);
+    } else if (part.type === "error") {
+      throw part.error;
+    } else if (part.type === "abort") {
+      // A timeout aborts the stream too, but that's a failure, not a stop.
+      if (!abortSignal?.aborted) {
+        throw new Error(part.reason ?? "The model call was aborted");
+      }
+      log.info("chat.stopped", { textLength: stepText.length });
+      if (stepText.trim()) {
+        updateChat(chatId, (chat) => {
+          chat.history.push(userMessage, {
+            role: "assistant",
+            content: stepText,
+          });
+        });
+      }
+      return { text: stepText, stopped: true };
+    }
+  }
+
+  const answer = await result.text;
+  if (!answer.trim()) {
     throw new Error("The model returned an empty answer");
   }
 
+  const [response, usage, totalUsage] = await Promise.all([
+    result.response,
+    result.usage,
+    result.totalUsage,
+  ]);
   updateChat(chatId, (chat) => {
-    chat.history.push(userMessage, ...trimForHistory(result.response.messages));
-    addUsage(chat, result.totalUsage);
+    chat.history.push(userMessage, ...trimForHistory(response.messages));
+    addUsage(chat, totalUsage);
 
     // `usage` covers only the final step, whose input is the whole context;
     // `totalUsage` sums every step, so it would overcount.
-    const { inputTokens, outputTokens } = result.usage;
+    const { inputTokens, outputTokens } = usage;
     if (inputTokens !== undefined && outputTokens !== undefined) {
       chat.lastContextTokens = inputTokens + outputTokens;
     }
   });
 
-  return result.text;
+  return { text: answer, stopped: false };
 }

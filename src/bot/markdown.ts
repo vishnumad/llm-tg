@@ -107,3 +107,12 @@ export function splitMarkdown(
   chunks.push(rest);
   return chunks;
 }
+
+/**
+ * Close a code block the model is still writing, so a preview shows it as
+ * code rather than as raw backticks.
+ */
+export function closeOpenFence(markdown: string): string {
+  const fenceCount = markdown.split(FENCE).length - 1;
+  return fenceCount % 2 === 1 ? `${markdown}\n${FENCE}` : markdown;
+}

@@ -1,12 +1,15 @@
 import { type Context, type Filter, GrammyError } from "grammy";
 import { logger } from "../logger";
 import {
+  closeOpenFence,
   collapseHtml,
   escapeHtml,
   MAX_MESSAGE_LENGTH,
   markdownToTelegramHtml,
   splitMarkdown,
 } from "./markdown";
+import { createPreview } from "./preview";
+import { registerStop, releaseStop } from "./stop";
 
 /** Where a conversation's output goes: back into the chat, or a guest reply. */
 export type Replier = {
@@ -19,6 +22,20 @@ export type Replier = {
    * with optional detail tucked into an expandable quote below it.
    */
   notice(text: string, detail?: string): Promise<unknown>;
+  /** Show the model's answer as it's written, then deliver it in full. */
+  stream(): AnswerStream;
+};
+
+/** One answer, previewed while the model writes it. */
+export type AnswerStream = {
+  /** Show the answer so far. Throttled, and never throws. */
+  update(markdown: string): void;
+  /** Deliver the finished answer in place of the preview. */
+  finish(markdown: string): Promise<void>;
+  /** Stop previewing an answer that won't be finished. */
+  cancel(): Promise<void>;
+  /** Aborted when the user stops the answer, if they're able to. */
+  abortSignal?: AbortSignal;
 };
 
 type Deliver = (text: string, parseMode?: "HTML") => Promise<unknown>;
@@ -27,6 +44,11 @@ type Deliver = (text: string, parseMode?: "HTML") => Promise<unknown>;
 const TYPING_INTERVAL_MS = 4_000;
 
 const COLLAPSE_THRESHOLD = 1_000;
+
+// Drafts are built for streaming. Edits count against the chat's rate limit,
+// which allows about 20 messages a minute in a group.
+const DRAFT_INTERVAL_MS = 500;
+const EDIT_INTERVAL_MS = 1_500;
 
 function shouldCollapse(markdown: string): boolean {
   return markdown.trim().length > COLLAPSE_THRESHOLD;
@@ -60,6 +82,26 @@ async function deliverMarkdown(
   }
 }
 
+function isNotModified(error: unknown): boolean {
+  return (
+    error instanceof GrammyError &&
+    error.description.includes("message is not modified")
+  );
+}
+
+/** Wrap an edit so that rendering the same text again isn't an error. */
+function ignoreNotModified(deliver: Deliver): Deliver {
+  return async (text, parseMode) => {
+    try {
+      await deliver(text, parseMode);
+    } catch (error) {
+      if (!isNotModified(error)) {
+        throw error;
+      }
+    }
+  };
+}
+
 /** Deliver a notice, folding its detail into an expandable quote. */
 function deliverNotice(
   text: string,
@@ -79,7 +121,26 @@ function deliverNotice(
   );
 }
 
+/**
+ * Replies in a group: the answer is sent as soon as it starts, then edited as
+ * it grows, spilling into further messages past Telegram's length limit.
+ */
 export function chatReplier(ctx: Filter<Context, "message">): Replier {
+  const replyTo = {
+    message_id: ctx.msg.message_id,
+    allow_sending_without_reply: true,
+  };
+  // Only the first message of an answer replies to the prompt.
+  const reply = (index: number) => (text: string, parse_mode?: "HTML") =>
+    ctx.reply(text, {
+      parse_mode,
+      reply_parameters: index === 0 ? replyTo : undefined,
+    });
+  const post: Deliver = (text, parse_mode) => ctx.reply(text, { parse_mode });
+
+  /** Messages of a streamed answer that failed, to be replaced by its error. */
+  let abandoned: number[] = [];
+
   return {
     async whileTyping(work) {
       // Purely cosmetic, so a failed chat action never holds up the answer.
@@ -96,32 +157,162 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
 
     async send(markdown) {
       const collapse = shouldCollapse(markdown);
-      const [first, ...rest] = splitMarkdown(markdown);
-      await deliverMarkdown(
-        first,
-        (text, parse_mode) =>
-          ctx.reply(text, {
-            parse_mode,
-            reply_parameters: {
-              message_id: ctx.msg.message_id,
-              allow_sending_without_reply: true,
-            },
-          }),
-        collapse,
-      );
-      for (const chunk of rest) {
-        await deliverMarkdown(
-          chunk,
-          (text, parse_mode) => ctx.reply(text, { parse_mode }),
-          collapse,
-        );
+      const chunks = splitMarkdown(markdown);
+      for (const [index, chunk] of chunks.entries()) {
+        await deliverMarkdown(chunk, reply(index), collapse);
       }
     },
 
-    notice: (text, detail) =>
-      deliverNotice(text, detail, (text, parse_mode) =>
-        ctx.reply(text, { parse_mode }),
-      ),
+    async notice(text, detail) {
+      const [first, ...rest] = abandoned;
+      abandoned = [];
+      if (first === undefined) {
+        return deliverNotice(text, detail, post);
+      }
+      await deliverNotice(
+        text,
+        detail,
+        ignoreNotModified((text, parse_mode) =>
+          ctx.api.editMessageText(ctx.chat.id, first, text, { parse_mode }),
+        ),
+      );
+      await Promise.all(
+        rest.map((id) =>
+          ctx.api.deleteMessage(ctx.chat.id, id).catch(() => {}),
+        ),
+      );
+    },
+
+    stream() {
+      const messageIds: number[] = [];
+      // What each message shows, so unchanged ones aren't edited again.
+      const shown: string[] = [];
+
+      async function render(chunks: string[], collapse: boolean) {
+        for (const [index, chunk] of chunks.entries()) {
+          const key = `${collapse}:${chunk}`;
+          if (shown[index] === key) {
+            continue;
+          }
+          const id = messageIds[index];
+          const deliver: Deliver =
+            id === undefined
+              ? async (text, parseMode) => {
+                  const message = await reply(index)(text, parseMode);
+                  messageIds[index] = message.message_id;
+                }
+              : ignoreNotModified((text, parse_mode) =>
+                  ctx.api.editMessageText(ctx.chat.id, id, text, {
+                    parse_mode,
+                  }),
+                );
+          await deliverMarkdown(chunk, deliver, collapse);
+          shown[index] = key;
+        }
+        // A new model step starts its text over, which can leave fewer chunks.
+        const extra = messageIds.splice(chunks.length);
+        shown.splice(chunks.length);
+        await Promise.all(
+          extra.map((id) =>
+            ctx.api.deleteMessage(ctx.chat.id, id).catch(() => {}),
+          ),
+        );
+      }
+
+      const preview = createPreview(async (markdown) => {
+        if (!markdown.trim()) {
+          return;
+        }
+        const chunks = splitMarkdown(markdown);
+        chunks.push(closeOpenFence(chunks.pop() ?? ""));
+        return render(chunks, false);
+      }, EDIT_INTERVAL_MS);
+
+      return {
+        update: preview.update,
+        async finish(markdown) {
+          await preview.stop();
+          await render(splitMarkdown(markdown), shouldCollapse(markdown));
+        },
+        async cancel() {
+          await preview.stop();
+          abandoned = [...messageIds];
+        },
+      };
+    },
+  };
+}
+
+/** Set once Telegram turns a draft down, so later turns go straight to edits. */
+let draftsUnavailable = false;
+
+export function canUseDrafts(): boolean {
+  return !draftsUnavailable;
+}
+
+/**
+ * Replies in a private chat: the answer streams as a draft, with a button to
+ * stop it, and is sent as a message once finished.
+ */
+export function draftReplier(ctx: Filter<Context, "message">): Replier {
+  const replier = chatReplier(ctx);
+
+  return {
+    ...replier,
+    stream() {
+      const chatId = ctx.chat.id;
+      const draftId = ctx.msg.message_id;
+      const abortSignal = registerStop(chatId, draftId);
+      // Takes over the preview if Telegram turns drafts down.
+      let fallback: AnswerStream | undefined;
+
+      const sendDraft = (text: string, parse_mode?: "HTML") =>
+        ctx.api.sendMessageDraft(chatId, draftId, text, {
+          parse_mode,
+          message_thread_id: ctx.msg.is_topic_message
+            ? ctx.msg.message_thread_id
+            : undefined,
+          can_stop: true,
+          keep_on_stop: true,
+        });
+
+      const preview = createPreview(async (markdown) => {
+        if (fallback) {
+          return fallback.update(markdown);
+        }
+        // A draft holds one message, so it shows the latest part.
+        const latest = splitMarkdown(markdown).at(-1) ?? "";
+        try {
+          await deliverMarkdown(closeOpenFence(latest), sendDraft);
+        } catch (error) {
+          if (!(error instanceof GrammyError) || error.error_code !== 400) {
+            throw error;
+          }
+          logger.info("reply.drafts_unavailable", {
+            description: error.description,
+          });
+          draftsUnavailable = true;
+          fallback = replier.stream();
+          fallback.update(markdown);
+        }
+      }, DRAFT_INTERVAL_MS);
+
+      return {
+        update: preview.update,
+        abortSignal,
+        async finish(markdown) {
+          await preview.stop();
+          releaseStop(chatId, draftId);
+          // The draft disappears once the message arrives.
+          await (fallback ? fallback.finish(markdown) : replier.send(markdown));
+        },
+        async cancel() {
+          await preview.stop();
+          releaseStop(chatId, draftId);
+          await fallback?.cancel();
+        },
+      };
+    },
   };
 }
 
@@ -142,33 +333,66 @@ export async function guestReplier(
     input_message_content: { message_text: PLACEHOLDER },
   });
 
-  let answered = false;
-  async function edit(text: string, parseMode?: "HTML") {
-    await ctx.api.editMessageTextInline(inline_message_id, text, {
+  const editInline = ignoreNotModified((text, parseMode) =>
+    ctx.api.editMessageTextInline(inline_message_id, text, {
       parse_mode: parseMode,
       link_preview_options: { is_disabled: true },
-    });
+    }),
+  );
+
+  // A preview doesn't count, so an error can still replace a partial answer.
+  let answered = false;
+  async function edit(text: string, parseMode?: "HTML") {
+    await editInline(text, parseMode);
     answered = true;
   }
+
+  /** The answer cut to the one message a guest reply gets. */
+  function fitOneMessage(markdown: string): string {
+    const [first, ...rest] = splitMarkdown(markdown, MAX_MESSAGE_LENGTH - 2);
+    return rest.length > 0 ? `${first}\n…` : first;
+  }
+
+  const send = (markdown: string) =>
+    deliverMarkdown(fitOneMessage(markdown), edit, shouldCollapse(markdown));
 
   return {
     // Chat actions need chat membership, which a guest doesn't have.
     whileTyping: (work) => work(),
 
-    send(markdown) {
-      const [first, ...rest] = splitMarkdown(markdown, MAX_MESSAGE_LENGTH - 2);
-      return deliverMarkdown(
-        rest.length > 0 ? `${first}\n…` : first,
-        edit,
-        shouldCollapse(markdown),
-      );
-    },
+    send,
 
     // Once the answer is in, a notice would overwrite it.
     notice: async (text, detail) => {
       if (!answered) {
         await deliverNotice(text, detail, edit);
       }
+    },
+
+    stream() {
+      let previewed: string | undefined;
+      const preview = createPreview(async (markdown) => {
+        if (markdown.trim()) {
+          const cut = fitOneMessage(closeOpenFence(markdown));
+          await deliverMarkdown(cut, editInline);
+          previewed = cut;
+        }
+      }, EDIT_INTERVAL_MS);
+      return {
+        update: preview.update,
+        async finish(markdown) {
+          await preview.stop();
+          if (
+            previewed === fitOneMessage(markdown) &&
+            !shouldCollapse(markdown)
+          ) {
+            answered = true;
+          } else {
+            await send(markdown);
+          }
+        },
+        cancel: preview.stop,
+      };
     },
   };
 }

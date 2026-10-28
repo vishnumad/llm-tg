@@ -20,9 +20,67 @@ Object.assign(process.env, {
   CHAT_DATA_DIR: dataDir,
 });
 
-/** Stands in for every model call, so no test can reach a real provider. */
+/** Stand in for every model call, so no test can reach a real provider. */
 export const generateText = mock();
-mock.module("ai", () => ({ ...ai, generateText }));
+export const streamText = mock();
+mock.module("ai", () => ({ ...ai, generateText, streamText }));
+
+type Usage = { inputTokens?: number; outputTokens?: number };
+
+export type FakeStream = {
+  /** Text deltas for each model step. The last step's text is the answer. */
+  steps?: string[][];
+  response?: { messages: unknown[] };
+  usage?: Usage;
+  totalUsage?: Usage;
+  /** Emitted as an error part once the deltas are out. */
+  error?: unknown;
+  /** Waited on once the deltas are out, e.g. for the user to press stop. */
+  gate?: Promise<unknown>;
+};
+
+/**
+ * A `streamText` implementation that plays back the given steps. It ends with
+ * an abort part if the call's `abortSignal` fired by the time `gate` settles.
+ */
+export function fakeStream({
+  steps = [["Hi!"]],
+  response,
+  usage = { inputTokens: 10, outputTokens: 10 },
+  totalUsage = usage,
+  error,
+  gate,
+}: FakeStream = {}) {
+  return ({ abortSignal }: { abortSignal?: AbortSignal }) => {
+    const text = (steps.at(-1) ?? []).join("");
+    async function* fullStream() {
+      for (const deltas of steps) {
+        yield { type: "start-step" };
+        for (const delta of deltas) {
+          yield { type: "text-delta", text: delta };
+        }
+        yield { type: "finish-step" };
+      }
+      await gate;
+      if (abortSignal?.aborted) {
+        yield { type: "abort" };
+        return;
+      }
+      if (error !== undefined) {
+        yield { type: "error", error };
+      }
+    }
+    return {
+      fullStream: fullStream(),
+      text: Promise.resolve(text),
+      response: Promise.resolve(
+        response ?? { messages: [{ role: "assistant", content: text }] },
+      ),
+      usage: Promise.resolve(usage),
+      totalUsage: Promise.resolve(totalUsage),
+    };
+  };
+}
 
 /** Stands in for the Tavily client, so no test can spend search credits. */
 export const tavilySearch = mock();

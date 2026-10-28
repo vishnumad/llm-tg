@@ -1,11 +1,17 @@
 import { sequentialize } from "@grammyjs/runner";
 import type { Context, Filter } from "grammy";
-import { generateReply } from "../ai/chat";
+import { generateReply, type Reply } from "../ai/chat";
 import { autoCompact } from "../ai/compaction";
 import { logger } from "../logger";
 import { commands, formatCompactionNotice } from "./commands";
 import { downloadPhotos } from "./photos";
-import { chatReplier, guestReplier, type Replier } from "./replier";
+import {
+  canUseDrafts,
+  chatReplier,
+  draftReplier,
+  guestReplier,
+  type Replier,
+} from "./replier";
 import { extractPrompt, stripBotMention } from "./triggers";
 
 /**
@@ -27,23 +33,29 @@ async function respond(
   const durationMs = () => Math.round(performance.now() - startedAt);
   log.debug("conversation.started", { promptLength: prompt.length });
 
-  let answer: string;
+  const stream = replier.stream();
+  let reply: Reply;
   try {
-    answer = await replier.whileTyping(async () =>
-      generateReply(msg.chat.id, {
-        text: prompt,
-        images: await downloadPhotos(ctx),
-        context: {
-          firstname: msg.from.first_name,
-          userId: String(msg.from.id),
-          timestamp: new Date(msg.date * 1000).toUTCString(),
-          replyingTo:
-            msg.reply_to_message?.text ?? msg.reply_to_message?.caption,
+    reply = await replier.whileTyping(async () =>
+      generateReply(
+        msg.chat.id,
+        {
+          text: prompt,
+          images: await downloadPhotos(ctx),
+          context: {
+            firstname: msg.from.first_name,
+            userId: String(msg.from.id),
+            timestamp: new Date(msg.date * 1000).toUTCString(),
+            replyingTo:
+              msg.reply_to_message?.text ?? msg.reply_to_message?.caption,
+          },
         },
-      }),
+        { onText: stream.update, abortSignal: stream.abortSignal },
+      ),
     );
   } catch (error) {
     log.error("conversation.failed", error, { durationMs: durationMs() });
+    await stream.cancel();
     await replier.notice(
       "Couldn't generate a response",
       error instanceof Error ? error.message : String(error),
@@ -51,8 +63,16 @@ async function respond(
     return;
   }
 
-  await replier.send(answer);
-  log.info("conversation.replied", { durationMs: durationMs() });
+  if (!reply.text.trim()) {
+    // Stopped before the model wrote anything, so there's nothing to keep.
+    await stream.cancel();
+    log.info("conversation.stopped", { durationMs: durationMs() });
+    return;
+  }
+  await stream.finish(reply.text);
+  log.info(reply.stopped ? "conversation.stopped" : "conversation.replied", {
+    durationMs: durationMs(),
+  });
 
   try {
     const compaction = await autoCompact(msg.chat.id);
@@ -66,9 +86,12 @@ async function respond(
 
 export async function handleMessage(ctx: Filter<Context, "message">) {
   const prompt = extractPrompt(ctx);
-  if (prompt !== undefined) {
-    await respond(ctx, chatReplier(ctx), prompt);
+  if (prompt === undefined) {
+    return;
   }
+  const streamsDrafts = ctx.chat.type === "private" && canUseDrafts();
+  const replier = streamsDrafts ? draftReplier(ctx) : chatReplier(ctx);
+  await respond(ctx, replier, prompt);
 }
 
 export async function handleGuestMessage(

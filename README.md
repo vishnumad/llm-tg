@@ -45,6 +45,8 @@ Compose reads `.env` at runtime and keeps chat history in the `chats` volume. Ru
 
 The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and replies to its own messages.
 
+Answers stream in as the model writes them. In a private chat they stream as a Telegram draft, with a button to stop the answer and keep what's written so far. In groups and guest replies, the message is edited as the answer grows.
+
 - `/newchat` - clear history
 - `/compact` - summarize history to save tokens
 - `/whichmodel`, `/debug`, `/chatinfo`, `/ping` - info
