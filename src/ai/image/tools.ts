@@ -12,7 +12,7 @@ export function createImageTools(
   return {
     generateImage: tool({
       description:
-        "Generate an image and send it to the chat. Use it whenever the user asks for a picture, drawing or photo. Describe the image in detail, in English.",
+        "Generate a new image and send it to the chat. Use it whenever the user asks for a picture, drawing or photo. The image model sees only your prompt, not the conversation, and can't edit earlier images, so describe the whole image every time, in English.",
       inputSchema: z.object({
         prompt: z
           .string()
@@ -22,7 +22,9 @@ export function createImageTools(
         negativePrompt: z
           .string()
           .optional()
-          .describe("Things to keep out of the image."),
+          .describe(
+            "Things to keep out of the image, as a plain list, e.g. 'blurry, text, watermark'. Put them here rather than writing 'no X' in the prompt.",
+          ),
         shape: z.enum(IMAGE_SHAPES).optional(),
       }),
       execute: (request) =>
