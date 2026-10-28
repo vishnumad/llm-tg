@@ -1,4 +1,5 @@
-import { type Context, type Filter, GrammyError } from "grammy";
+import { type Context, type Filter, GrammyError, InputFile } from "grammy";
+import type { SendImage } from "../ai/image/tools";
 import { logger } from "../logger";
 import {
   collapseHtml,
@@ -14,6 +15,8 @@ export type Replier = {
   whileTyping<T>(work: () => Promise<T>): Promise<T>;
   /** Deliver the model's answer, written in markdown. */
   send(markdown: string): Promise<unknown>;
+  /** Missing where the bot can't upload a photo. */
+  sendImage?: SendImage;
   /**
    * Plain text outside the answer, such as errors and compaction notices,
    * with optional detail tucked into an expandable quote below it.
@@ -80,6 +83,11 @@ function deliverNotice(
 }
 
 export function chatReplier(ctx: Filter<Context, "message">): Replier {
+  const replyToMessage = {
+    message_id: ctx.msg.message_id,
+    allow_sending_without_reply: true,
+  };
+
   return {
     async whileTyping(work) {
       // Purely cosmetic, so a failed chat action never holds up the answer.
@@ -100,13 +108,7 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
       await deliverMarkdown(
         first,
         (text, parse_mode) =>
-          ctx.reply(text, {
-            parse_mode,
-            reply_parameters: {
-              message_id: ctx.msg.message_id,
-              allow_sending_without_reply: true,
-            },
-          }),
+          ctx.reply(text, { parse_mode, reply_parameters: replyToMessage }),
         collapse,
       );
       for (const chunk of rest) {
@@ -117,6 +119,11 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
         );
       }
     },
+
+    sendImage: (image) =>
+      ctx.replyWithPhoto(new InputFile(image), {
+        reply_parameters: replyToMessage,
+      }),
 
     notice: (text, detail) =>
       deliverNotice(text, detail, (text, parse_mode) =>
@@ -130,7 +137,8 @@ const PLACEHOLDER = "Thinking…";
 /**
  * A guest query buys exactly one message, and its id expires within seconds -
  * well before a model turn finishes. So the message is claimed up front with a
- * placeholder, and the answer is edited into it later.
+ * placeholder, and the answer is edited into it later. That edit can't upload
+ * a photo, so a guest reply sends no images.
  */
 export async function guestReplier(
   ctx: Filter<Context, "guest_message">,

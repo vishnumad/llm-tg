@@ -30,17 +30,21 @@ async function respond(
   let answer: string;
   try {
     answer = await replier.whileTyping(async () =>
-      generateReply(msg.chat.id, {
-        text: prompt,
-        images: await downloadPhotos(ctx),
-        context: {
-          firstname: msg.from.first_name,
-          userId: String(msg.from.id),
-          timestamp: new Date(msg.date * 1000).toUTCString(),
-          replyingTo:
-            msg.reply_to_message?.text ?? msg.reply_to_message?.caption,
+      generateReply(
+        msg.chat.id,
+        {
+          text: prompt,
+          images: await downloadPhotos(ctx),
+          context: {
+            firstname: msg.from.first_name,
+            userId: String(msg.from.id),
+            timestamp: new Date(msg.date * 1000).toUTCString(),
+            replyingTo:
+              msg.reply_to_message?.text ?? msg.reply_to_message?.caption,
+          },
         },
-      }),
+        replier.sendImage,
+      ),
     );
   } catch (error) {
     log.error("conversation.failed", error, { durationMs: durationMs() });
@@ -51,7 +55,9 @@ async function respond(
     return;
   }
 
-  await replier.send(answer);
+  if (answer.trim()) {
+    await replier.send(answer);
+  }
   log.info("conversation.replied", { durationMs: durationMs() });
 
   try {

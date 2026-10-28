@@ -4,7 +4,8 @@ COPY package.json bun.lock ./
 RUN bun install --production --frozen-lockfile
 
 FROM oven/bun:1-alpine
-ENV NODE_ENV=production
+RUN apk add --no-cache chromium
+ENV NODE_ENV=production PERCHANCE_CHROMIUM_PATH=/usr/bin/chromium
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
