@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { logger } from "../../logger";
+import { logToolCall } from "../tool-logging";
 import { truncate } from "../transcript";
 import type { ReadResponse, SearchProvider, SearchResponse } from "./provider";
 
@@ -30,22 +30,6 @@ export function formatReadResponse({ answer, pages, failed }: ReadResponse) {
   return sections.join("\n\n") || "Nothing could be read from those pages.";
 }
 
-async function logged<T>(
-  event: string,
-  fields: Record<string, unknown>,
-  run: () => Promise<T>,
-): Promise<T> {
-  logger.info(event, fields);
-  try {
-    return await run();
-  } catch (error) {
-    // The SDK hands a thrown error to the model as the tool result, so it
-    // would otherwise never reach the logs.
-    logger.error(`${event}.failed`, error, fields);
-    throw error;
-  }
-}
-
 export function createSearchTools(provider: SearchProvider) {
   return {
     webSearch: tool({
@@ -63,7 +47,7 @@ export function createSearchTools(provider: SearchProvider) {
           .describe("Only return results from this recent period."),
       }),
       execute: ({ query, topic, timeRange }) =>
-        logged(
+        logToolCall(
           "web_search",
           { provider: provider.name, query, topic, timeRange },
           async () =>
@@ -88,7 +72,7 @@ export function createSearchTools(provider: SearchProvider) {
           .describe("What to look for on the pages, if anything specific."),
       }),
       execute: ({ urls, question }) =>
-        logged(
+        logToolCall(
           "read_web_page",
           { provider: provider.name, urls, question },
           async () => formatReadResponse(await provider.read(urls, question)),

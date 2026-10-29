@@ -1,4 +1,6 @@
-import { type Context, type Filter, GrammyError } from "grammy";
+import { type Context, type Filter, GrammyError, InputFile } from "grammy";
+import type { SendImage } from "../ai/image/tools";
+import { config } from "../config";
 import { logger } from "../logger";
 import {
   collapseHtml,
@@ -14,6 +16,8 @@ export type Replier = {
   whileTyping<T>(work: () => Promise<T>): Promise<T>;
   /** Deliver the model's answer, written in markdown. */
   send(markdown: string): Promise<unknown>;
+  /** Missing where the bot can't upload a photo. */
+  sendImage?: SendImage;
   /**
    * Plain text outside the answer, such as errors and compaction notices,
    * with optional detail tucked into an expandable quote below it.
@@ -80,6 +84,11 @@ function deliverNotice(
 }
 
 export function chatReplier(ctx: Filter<Context, "message">): Replier {
+  const replyToMessage = {
+    message_id: ctx.msg.message_id,
+    allow_sending_without_reply: true,
+  };
+
   return {
     async whileTyping(work) {
       // Purely cosmetic, so a failed chat action never holds up the answer.
@@ -100,13 +109,7 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
       await deliverMarkdown(
         first,
         (text, parse_mode) =>
-          ctx.reply(text, {
-            parse_mode,
-            reply_parameters: {
-              message_id: ctx.msg.message_id,
-              allow_sending_without_reply: true,
-            },
-          }),
+          ctx.reply(text, { parse_mode, reply_parameters: replyToMessage }),
         collapse,
       );
       for (const chunk of rest) {
@@ -118,6 +121,11 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
       }
     },
 
+    sendImage: (image) =>
+      ctx.replyWithPhoto(new InputFile(image), {
+        reply_parameters: replyToMessage,
+      }),
+
     notice: (text, detail) =>
       deliverNotice(text, detail, (text, parse_mode) =>
         ctx.reply(text, { parse_mode }),
@@ -126,11 +134,16 @@ export function chatReplier(ctx: Filter<Context, "message">): Replier {
 }
 
 const PLACEHOLDER = "Thinking…";
+const MAX_CAPTION_LENGTH = 1024;
 
 /**
  * A guest query buys exactly one message, and its id expires within seconds -
  * well before a model turn finishes. So the message is claimed up front with a
  * placeholder, and the answer is edited into it later.
+ *
+ * An inline edit can't upload a file, so an image first goes to the upload
+ * chat to get a file id, and the placeholder becomes that photo. Without an
+ * upload chat, a guest reply sends no images.
  */
 export async function guestReplier(
   ctx: Filter<Context, "guest_message">,
@@ -143,26 +156,59 @@ export async function guestReplier(
   });
 
   let answered = false;
+  let isPhoto = false;
   async function edit(text: string, parseMode?: "HTML") {
-    await ctx.api.editMessageTextInline(inline_message_id, text, {
-      parse_mode: parseMode,
-      link_preview_options: { is_disabled: true },
-    });
+    if (isPhoto) {
+      await ctx.api.editMessageCaptionInline(inline_message_id, {
+        caption: text,
+        parse_mode: parseMode,
+      });
+    } else {
+      await ctx.api.editMessageTextInline(inline_message_id, text, {
+        parse_mode: parseMode,
+        link_preview_options: { is_disabled: true },
+      });
+    }
     answered = true;
   }
+
+  async function showImage(uploadChatId: string, image: Uint8Array) {
+    const upload = await ctx.api.sendPhoto(uploadChatId, new InputFile(image), {
+      disable_notification: true,
+    });
+    const largest = upload.photo[upload.photo.length - 1];
+    await ctx.api.editMessageMediaInline(inline_message_id, {
+      type: "photo",
+      media: largest.file_id,
+    });
+    isPhoto = true;
+    // The file id stays valid once the upload is deleted.
+    await ctx.api
+      .deleteMessage(uploadChatId, upload.message_id)
+      .catch((error) =>
+        logger.error("guest.upload_cleanup_failed", error, { uploadChatId }),
+      );
+  }
+
+  const { TELEGRAM_UPLOAD_CHAT_ID } = config;
 
   return {
     // Chat actions need chat membership, which a guest doesn't have.
     whileTyping: (work) => work(),
 
     send(markdown) {
-      const [first, ...rest] = splitMarkdown(markdown, MAX_MESSAGE_LENGTH - 2);
+      const limit = isPhoto ? MAX_CAPTION_LENGTH : MAX_MESSAGE_LENGTH;
+      const [first, ...rest] = splitMarkdown(markdown, limit - 2);
       return deliverMarkdown(
         rest.length > 0 ? `${first}\n…` : first,
         edit,
         shouldCollapse(markdown),
       );
     },
+
+    sendImage: TELEGRAM_UPLOAD_CHAT_ID
+      ? (image) => showImage(TELEGRAM_UPLOAD_CHAT_ID, image)
+      : undefined,
 
     // Once the answer is in, a notice would overwrite it.
     notice: async (text, detail) => {
