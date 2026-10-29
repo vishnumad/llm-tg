@@ -6,12 +6,15 @@ import {
   handleMessage,
   inChatOrder,
 } from "./bot/conversation";
+import { handleStopGeneration } from "./bot/stop";
 import { config } from "./config";
 import { logger } from "./logger";
 
 const bot = new Bot(config.TELEGRAM_API_KEY);
 
 bot.on("guest_message", handleGuestMessage);
+// Outside the chat's queue, which the turn being stopped is holding.
+bot.on("stopped_message_generation", handleStopGeneration);
 
 const messages = bot.on("message");
 messages.use(inChatOrder);
@@ -26,7 +29,15 @@ bot.catch(({ error, ctx }) => {
 
 await bot.init();
 const runner = run(bot, {
-  runner: { fetch: { allowed_updates: ["message", "guest_message"] } },
+  runner: {
+    fetch: {
+      allowed_updates: [
+        "message",
+        "guest_message",
+        "stopped_message_generation",
+      ],
+    },
+  },
 });
 logger.info("bot.started", {
   username: bot.botInfo.username,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  closeOpenFence,
   collapseHtml,
   markdownToTelegramHtml,
   splitMarkdown,
@@ -227,5 +228,18 @@ describe("splitMarkdown", () => {
     for (const chunk of splitMarkdown(text, 256)) {
       expect(chunk.length).toBeLessThanOrEqual(256);
     }
+  });
+});
+
+describe("closeOpenFence", () => {
+  test("closes a code block that's still open", () => {
+    expect(closeOpenFence("Try:\n```js\nconst a")).toBe(
+      "Try:\n```js\nconst a\n```",
+    );
+  });
+
+  test("leaves closed code blocks alone", () => {
+    const markdown = "```\none\n```\nand `two`";
+    expect(closeOpenFence(markdown)).toBe(markdown);
   });
 });

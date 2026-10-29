@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
-import { generateText, uniqueChatId } from "../test-setup";
+import { fakeStream, streamText, uniqueChatId } from "../test-setup";
 import { generateReply, type UserMessage } from "./chat";
 import { getChat, updateChat } from "./chat-store";
 
@@ -15,19 +15,23 @@ const reply: ModelMessage = {
   content: [{ type: "text", text: "Hi!" }],
 };
 
-beforeEach(() => generateText.mockReset());
+beforeEach(() => streamText.mockReset());
 
 describe("generateReply", () => {
   test("appends the turn to history and records usage", async () => {
     const chatId = uniqueChatId();
-    generateText.mockResolvedValueOnce({
-      text: "Hi!",
-      response: { messages: [reply] },
-      usage: { inputTokens: 300, outputTokens: 20 },
-      totalUsage: { inputTokens: 500, outputTokens: 40 },
-    });
+    streamText.mockImplementationOnce(
+      fakeStream({
+        response: { messages: [reply] },
+        usage: { inputTokens: 300, outputTokens: 20 },
+        totalUsage: { inputTokens: 500, outputTokens: 40 },
+      }),
+    );
 
-    expect(await generateReply(chatId, message)).toBe("Hi!");
+    expect(await generateReply(chatId, message)).toEqual({
+      text: "Hi!",
+      stopped: false,
+    });
 
     const chat = getChat(chatId);
     expect(chat.history).toEqual([
@@ -63,32 +67,34 @@ describe("generateReply", () => {
       toolCallId: "1",
       toolName: "webSearch",
     } as const;
-    generateText.mockResolvedValueOnce({
-      text: "Hi!",
-      response: {
-        messages: [
-          {
-            role: "assistant",
-            content: [{ type: "reasoning", text: "let me search" }, toolCall],
-          },
-          {
-            role: "tool",
-            content: [
-              {
-                ...toolResult,
-                output: { type: "text", value: "x".repeat(5_000) },
-              },
-            ],
-          },
-          {
-            role: "assistant",
-            content: [{ type: "reasoning", text: "got it" }, ...reply.content],
-          },
-        ],
-      },
-      usage: { inputTokens: 1, outputTokens: 1 },
-      totalUsage: { inputTokens: 1, outputTokens: 1 },
-    });
+    streamText.mockImplementationOnce(
+      fakeStream({
+        response: {
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "reasoning", text: "let me search" }, toolCall],
+            },
+            {
+              role: "tool",
+              content: [
+                {
+                  ...toolResult,
+                  output: { type: "text", value: "x".repeat(5_000) },
+                },
+              ],
+            },
+            {
+              role: "assistant",
+              content: [
+                { type: "reasoning", text: "got it" },
+                ...reply.content,
+              ],
+            },
+          ],
+        },
+      }),
+    );
 
     await generateReply(chatId, message);
 
@@ -117,16 +123,11 @@ describe("generateReply", () => {
       chat.history.push(earlier);
       chat.summary = "they like cats";
     });
-    generateText.mockResolvedValueOnce({
-      text: "Hi!",
-      response: { messages: [reply] },
-      usage: { inputTokens: 1, outputTokens: 1 },
-      totalUsage: { inputTokens: 1, outputTokens: 1 },
-    });
+    streamText.mockImplementationOnce(fakeStream());
 
     await generateReply(chatId, message);
 
-    const request = generateText.mock.calls[0][0];
+    const request = streamText.mock.calls[0][0];
     expect(request.model.modelId).toBe("default-model");
     expect(request.system).toContain(
       "<conversation_summary>\nthey like cats\n</conversation_summary>",
@@ -135,9 +136,30 @@ describe("generateReply", () => {
     expect(request.messages).toHaveLength(2);
   });
 
+  test("streams the answer so far, starting over with each step", async () => {
+    streamText.mockImplementationOnce(
+      fakeStream({
+        steps: [
+          ["Let me ", "search"],
+          ["It's ", "sunny"],
+        ],
+      }),
+    );
+    const seen: string[] = [];
+
+    const { text } = await generateReply(uniqueChatId(), message, {
+      onText: (text) => seen.push(text),
+    });
+
+    expect(seen).toEqual(["Let me ", "Let me search", "It's ", "It's sunny"]);
+    expect(text).toBe("It's sunny");
+  });
+
   test("leaves the chat untouched when the model call fails", async () => {
     const chatId = uniqueChatId();
-    generateText.mockRejectedValueOnce(new Error("rate limited"));
+    streamText.mockImplementationOnce(
+      fakeStream({ error: new Error("rate limited") }),
+    );
 
     await expect(generateReply(chatId, message)).rejects.toThrow(
       "rate limited",
@@ -147,16 +169,60 @@ describe("generateReply", () => {
 
   test("treats an empty answer as a failure, leaving the chat untouched", async () => {
     const chatId = uniqueChatId();
-    generateText.mockResolvedValueOnce({
-      text: "  ",
-      response: { messages: [reply] },
-      usage: { inputTokens: 1, outputTokens: 1 },
-      totalUsage: { inputTokens: 1, outputTokens: 1 },
-    });
+    streamText.mockImplementationOnce(fakeStream({ steps: [["  "]] }));
 
     await expect(generateReply(chatId, message)).rejects.toThrow(
       "empty answer",
     );
+    expect(getChat(chatId).history).toEqual([]);
+  });
+
+  test("keeps a stopped answer's partial text in history", async () => {
+    const chatId = uniqueChatId();
+    const stop = new AbortController();
+    const pressed = Promise.withResolvers<void>();
+    streamText.mockImplementationOnce(
+      fakeStream({ steps: [["Once upon"]], gate: pressed.promise }),
+    );
+
+    const replied = generateReply(chatId, message, {
+      abortSignal: stop.signal,
+    });
+    stop.abort();
+    pressed.resolve();
+
+    expect(await replied).toEqual({ text: "Once upon", stopped: true });
+    const chat = getChat(chatId);
+    expect(chat.history[1]).toEqual({
+      role: "assistant",
+      content: "Once upon",
+    });
+    // A stopped turn reports no usage.
+    expect(chat.tokenUsage.totalInputTokens).toBe(0);
+  });
+
+  test("leaves the chat untouched when stopped before any text", async () => {
+    const chatId = uniqueChatId();
+    const stop = new AbortController();
+    stop.abort();
+    streamText.mockImplementationOnce(fakeStream({ steps: [[]] }));
+
+    expect(
+      await generateReply(chatId, message, { abortSignal: stop.signal }),
+    ).toEqual({ text: "", stopped: true });
+    expect(getChat(chatId).history).toEqual([]);
+  });
+
+  test("treats an abort it didn't ask for, like a timeout, as a failure", async () => {
+    const chatId = uniqueChatId();
+    streamText.mockImplementationOnce(() => ({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Once" };
+        yield { type: "abort", reason: "The operation timed out." };
+      })(),
+    }));
+
+    await expect(generateReply(chatId, message)).rejects.toThrow("timed out");
     expect(getChat(chatId).history).toEqual([]);
   });
 });

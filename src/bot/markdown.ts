@@ -2,6 +2,10 @@ export const MAX_MESSAGE_LENGTH = 4096;
 
 const FENCE = "```";
 
+function hasOpenFence(markdown: string): boolean {
+  return (markdown.split(FENCE).length - 1) % 2 === 1;
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -96,8 +100,7 @@ export function splitMarkdown(
     let chunk = rest.slice(0, cut);
     rest = rest.slice(cut < window.length ? cut + 1 : cut);
 
-    const fenceCount = chunk.split(FENCE).length - 1;
-    if (fenceCount % 2 === 1) {
+    if (hasOpenFence(chunk)) {
       chunk += `\n${FENCE}`;
       rest = `${FENCE}\n${rest}`;
     }
@@ -106,4 +109,8 @@ export function splitMarkdown(
 
   chunks.push(rest);
   return chunks;
+}
+
+export function closeOpenFence(markdown: string): string {
+  return hasOpenFence(markdown) ? `${markdown}\n${FENCE}` : markdown;
 }
