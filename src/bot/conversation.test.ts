@@ -1,10 +1,7 @@
-import { beforeEach, describe, expect, spyOn, test } from "bun:test";
-import type { ToolExecutionOptions, ToolSet } from "ai";
-import { Api, Context, type Filter, InputFile } from "grammy";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { Api, Context, type Filter } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 import { getChat, updateChat } from "../ai/chat-store";
-import { imageProvider } from "../ai/image";
-import type { ImageProvider } from "../ai/image/provider";
 import { generateText, uniqueChatId } from "../test-setup";
 import { handleGuestMessage, handleMessage } from "./conversation";
 
@@ -83,20 +80,6 @@ function modelAnswer(text: string, contextTokens = 20) {
     response: { messages: [{ role: "assistant", content: text }] },
     usage,
     totalUsage: usage,
-  };
-}
-
-/** A model turn that draws an image, then answers with `text`. */
-function drawsImage(text: string) {
-  spyOn(imageProvider as ImageProvider, "generate").mockResolvedValueOnce(
-    new Uint8Array([1, 2, 3]),
-  );
-  return async ({ tools }: { tools: ToolSet }) => {
-    await tools.generateImage.execute?.({ prompt: "a fox" }, {
-      toolCallId: "1",
-      messages: [],
-    } as ToolExecutionOptions);
-    return modelAnswer(text);
   };
 }
 
@@ -223,33 +206,6 @@ describe("handleMessage", () => {
     expect(payloadsOf("sendMessage")).toMatchObject([{ text: "hello" }]);
   });
 
-  test("replies with the image before the answer", async () => {
-    generateText.mockImplementationOnce(drawsImage("Here's your fox"));
-
-    await handleMessage(gCommand(uniqueChatId(), "draw a fox"));
-
-    const replies = calls.filter(({ method }) => method !== "sendChatAction");
-    expect(replies).toMatchObject([
-      {
-        method: "sendPhoto",
-        payload: {
-          photo: expect.any(InputFile),
-          reply_parameters: { message_id: 1 },
-        },
-      },
-      { method: "sendMessage", payload: { text: "Here's your fox" } },
-    ]);
-  });
-
-  test("sends only the image when the model adds nothing", async () => {
-    generateText.mockImplementationOnce(drawsImage(""));
-
-    await handleMessage(gCommand(uniqueChatId(), "draw a fox"));
-
-    expect(payloadsOf("sendPhoto")).toHaveLength(1);
-    expect(payloadsOf("sendMessage")).toEqual([]);
-  });
-
   test("announces an automatic compaction after the answer", async () => {
     generateText
       .mockResolvedValueOnce(modelAnswer("hello", 1200))
@@ -288,15 +244,6 @@ describe("handleGuestMessage", () => {
       { inline_message_id: "inline", text: "first", parse_mode: "HTML" },
       { inline_message_id: "inline", text: "second", parse_mode: "HTML" },
     ]);
-  });
-
-  test("can't draw images, since a guest reply can't upload one", async () => {
-    generateText.mockResolvedValueOnce(modelAnswer("hello"));
-
-    await handleGuestMessage(guestMention(uniqueChatId(), 1, "draw a fox"));
-
-    const [[request]] = generateText.mock.calls;
-    expect(Object.keys(request.tools)).not.toContain("generateImage");
   });
 
   test("shows the error in place of the placeholder", async () => {

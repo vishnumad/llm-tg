@@ -11,8 +11,6 @@ Object.assign(process.env, {
   TELEGRAM_API_KEY: "test",
   GROQ_API_KEY: "test",
   SEARCH_PROVIDER: "",
-  IMAGE_PROVIDER: "perchance",
-  PERCHANCE_CHROMIUM_PATH: "",
   TAVILY_API_KEY: "test",
   GEMINI_API_KEY: "test",
   GROQ_DEFAULT_MODEL_ID: "default-model",
@@ -34,12 +32,6 @@ export const tavily = mock(() => ({
   extract: tavilyExtract,
 }));
 mock.module("@tavily/core", () => ({ tavily }));
-
-/** Stands in for Chromium, so no test can launch a browser or reach Perchance. */
-export const launchChromium = mock();
-mock.module("playwright-core", () => ({
-  chromium: { launch: launchChromium },
-}));
 
 let lastChatId = 0;
 

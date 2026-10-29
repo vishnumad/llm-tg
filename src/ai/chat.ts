@@ -10,8 +10,6 @@ import {
 import { config } from "../config";
 import { logger } from "../logger";
 import { addUsage, getChat, updateChat } from "./chat-store";
-import { imageProvider } from "./image";
-import { createImageTools, type SendImage } from "./image/tools";
 import { model } from "./model";
 import { searchTools } from "./search";
 import { MAX_TOOL_CHARS, truncate } from "./transcript";
@@ -72,14 +70,9 @@ function trimForHistory(
   });
 }
 
-/**
- * The model can only make images when given `sendImage`, and its answer may
- * be empty once it has sent one.
- */
 export async function generateReply(
   chatId: number,
   { text, context, images }: UserMessage,
-  sendImage?: SendImage,
 ): Promise<string> {
   const userMessage: ModelMessage = {
     role: "user",
@@ -99,23 +92,11 @@ export async function generateReply(
     imageCount: images.length,
   });
 
-  let sentImage = false;
-  const tools =
-    imageProvider && sendImage
-      ? {
-          ...searchTools,
-          ...createImageTools(imageProvider, async (image) => {
-            await sendImage(image);
-            sentImage = true;
-          }),
-        }
-      : searchTools;
-
   const result = await generateText({
     model,
     system: buildSystemPrompt(summary),
     messages: [...history, userMessage],
-    tools,
+    tools: searchTools,
     stopWhen: stepCountIs(5),
     timeout: config.MODEL_TIMEOUT_MS,
     onStepFinish: (step) =>
@@ -130,7 +111,7 @@ export async function generateReply(
       }),
   });
 
-  if (!result.text.trim() && !sentImage) {
+  if (!result.text.trim()) {
     throw new Error("The model returned an empty answer");
   }
 
