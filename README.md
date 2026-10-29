@@ -22,6 +22,11 @@ bun run dev           # or `bun run start`
 | `TAVILY_API_KEY` | Web search key, for Tavily |
 | `GEMINI_API_KEY` | Web search key, only when `SEARCH_PROVIDER=gemini` |
 | `WEB_SEARCH_MODEL_ID` | Only when `SEARCH_PROVIDER=gemini`, e.g. `gemini-2.5-flash-lite` |
+| `IMAGE_PROVIDER` | Optional. `cloudflare` to let the chat model make images |
+| `CLOUDFLARE_ACCOUNT_ID` | Only when `IMAGE_PROVIDER=cloudflare` |
+| `CLOUDFLARE_API_TOKEN` | Only when `IMAGE_PROVIDER=cloudflare`. Make one from the "Workers AI" template |
+| `CLOUDFLARE_IMAGE_MODEL_ID` | Optional. Any FLUX.2 model, defaults to `@cf/black-forest-labs/flux-2-klein-4b` |
+| `TELEGRAM_UPLOAD_CHAT_ID` | Optional. A chat the bot can post in, needed for images in guest-mode replies |
 | `AUTO_COMPACT_TOKEN_THRESHOLD` | Optional. Summarize history once context exceeds this, e.g. `60000` |
 | `CHAT_DATA_DIR` | Optional. Defaults to `./data/chats` |
 | `MODEL_TIMEOUT_MS` | Optional. Abandon a chat model call after this long, e.g. `300000`. No timeout by default |
@@ -30,6 +35,12 @@ bun run dev           # or `bun run start`
 The chat model comes from Groq, or from an OpenAI-compatible API once `OPENAI_COMPATIBLE_BASE_URL` is set. It has to support tool calling, which web search runs through.
 
 Web search gives the chat model two tools: `webSearch` and `readWebPage`. Each backend lives in `src/ai/search/` and implements the `SearchProvider` interface in `provider.ts`; to add one (e.g. Exa), write a provider file, add its config branch in `src/config.ts`, and add a case in `src/ai/search/index.ts`.
+
+Image generation gives the chat model a `generateImage` tool, which sends the image to the chat. Backends live in `src/ai/image/` and implement the `ImageProvider` interface in `provider.ts`; adding one works like adding a search backend.
+
+The Cloudflare backend runs on Workers AI, whose free 10,000 neurons a day cover about 95 images from the default model. Past that, a Workers Free account gets a "quota used up" error until 00:00 UTC, and a Workers Paid account pays for the extra.
+
+A guest-mode reply is an inline message, and Telegram won't upload a new file into one. So the bot first posts the image to `TELEGRAM_UPLOAD_CHAT_ID` (a private channel where it's an admin, or your own chat with it), turns the placeholder into that photo, then deletes the upload. Without that chat, guest-mode replies don't get the tool.
 
 Checks: `bun test`, `bun run typecheck`, `bun run lint` (`bun run format` to fix).
 

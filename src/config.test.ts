@@ -118,4 +118,50 @@ describe("parseConfig", () => {
       parseConfig({ ...base, ...groq, SEARCH_PROVIDER: "bing" }),
     ).toThrow(/SEARCH_PROVIDER/);
   });
+
+  test("makes no images by default", () => {
+    expect(parseConfig({ ...base, ...groq }).image).toBeUndefined();
+  });
+
+  test("makes images with Cloudflare once selected, with a default model", () => {
+    const { image } = parseConfig({
+      ...base,
+      ...groq,
+      IMAGE_PROVIDER: "cloudflare",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      CLOUDFLARE_API_TOKEN: "cf-token",
+    });
+
+    expect(image).toEqual({
+      provider: "cloudflare",
+      accountId: "account",
+      apiToken: "cf-token",
+      modelId: "@cf/black-forest-labs/flux-2-klein-4b",
+    });
+  });
+
+  test("reads the Cloudflare image model", () => {
+    const { image } = parseConfig({
+      ...base,
+      ...groq,
+      IMAGE_PROVIDER: "cloudflare",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      CLOUDFLARE_API_TOKEN: "cf-token",
+      CLOUDFLARE_IMAGE_MODEL_ID: "@cf/black-forest-labs/flux-2-klein-9b",
+    });
+
+    expect(image?.modelId).toBe("@cf/black-forest-labs/flux-2-klein-9b");
+  });
+
+  test("needs the Cloudflare account and token for Cloudflare", () => {
+    expect(() =>
+      parseConfig({ ...base, ...groq, IMAGE_PROVIDER: "cloudflare" }),
+    ).toThrow(/CLOUDFLARE_ACCOUNT_ID.*CLOUDFLARE_API_TOKEN/s);
+  });
+
+  test("rejects an unknown image provider", () => {
+    expect(() =>
+      parseConfig({ ...base, ...groq, IMAGE_PROVIDER: "dall-e" }),
+    ).toThrow(/IMAGE_PROVIDER/);
+  });
 });
