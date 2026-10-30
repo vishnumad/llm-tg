@@ -11,7 +11,11 @@ import { config } from "../config";
 import { logger } from "../logger";
 import { addUsage, getChat, updateChat } from "./chat-store";
 import { imageProvider } from "./image";
-import { createImageTools, type SendImage } from "./image/tools";
+import {
+  createImageTools,
+  type LoadImages,
+  type SendImage,
+} from "./image/tools";
 import { model } from "./model";
 import { searchTools } from "./search";
 import { MAX_TOOL_CHARS, truncate } from "./transcript";
@@ -32,6 +36,7 @@ export type UserMessage = {
     replyingTo?: string;
   };
   images: FilePart[];
+  loadImages: LoadImages;
 };
 
 function buildSystemPrompt(summary: string | undefined): string {
@@ -78,7 +83,7 @@ function trimForHistory(
  */
 export async function generateReply(
   chatId: number,
-  { text, context, images }: UserMessage,
+  { text, context, images, loadImages }: UserMessage,
   sendImage?: SendImage,
 ): Promise<string> {
   const userMessage: ModelMessage = {
@@ -104,10 +109,14 @@ export async function generateReply(
     imageProvider && sendImage
       ? {
           ...searchTools,
-          ...createImageTools(imageProvider, async (image) => {
-            await sendImage(image);
-            sentImage = true;
-          }),
+          ...createImageTools(
+            imageProvider,
+            async (image) => {
+              await sendImage(image);
+              sentImage = true;
+            },
+            images.length > 0 ? loadImages : undefined,
+          ),
         }
       : searchTools;
 

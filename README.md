@@ -36,7 +36,7 @@ The chat model comes from Groq, or from an OpenAI-compatible API once `OPENAI_CO
 
 Web search gives the chat model two tools: `webSearch` and `readWebPage`. Each backend lives in `src/ai/search/` and implements the `SearchProvider` interface in `provider.ts`; to add one (e.g. Exa), write a provider file, add its config branch in `src/config.ts`, and add a case in `src/ai/search/index.ts`.
 
-Image generation gives the chat model a `generateImage` tool, which sends the image to the chat. Backends live in `src/ai/image/` and implement the `ImageProvider` interface in `provider.ts`; adding one works like adding a search backend.
+Image generation gives the chat model a `generateImage` tool, which sends the image to the chat. When the message has a photo or replies to one, it also gets `editImage`, which draws from those photos, so you can send a photo and ask for changes, or reply to an image the bot made. FLUX.2 on Workers AI takes input images up to 512px, so edits use Telegram's largest copy that fits, usually 320px. Backends live in `src/ai/image/` and implement the `ImageProvider` interface in `provider.ts`; adding one works like adding a search backend.
 
 The Cloudflare backend runs on Workers AI, whose free 10,000 neurons a day cover about 95 images from the default model. Past that, a Workers Free account gets a "quota used up" error until 00:00 UTC, and a Workers Paid account pays for the extra.
 
