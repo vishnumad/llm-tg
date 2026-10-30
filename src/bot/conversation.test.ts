@@ -20,6 +20,7 @@ let failCall: (call: ApiCall) => string | undefined;
 
 const RESULTS: Record<string, unknown> = {
   answerGuestQuery: { inline_message_id: "inline" },
+  getFile: { file_id: "file", file_path: "photos/file.jpg" },
   sendPhoto: {
     message_id: 99,
     photo: [{ file_id: "small" }, { file_id: "large" }],
@@ -254,6 +255,64 @@ describe("handleMessage", () => {
 
     expect(payloadsOf("sendPhoto")).toHaveLength(1);
     expect(payloadsOf("sendMessage")).toEqual([]);
+  });
+
+  test("edits the photo the user replies to, at a size the provider takes", async () => {
+    const chat = { id: uniqueChatId(), type: "group", title: "Test" } as const;
+    const ctx = contextFor<Filter<Context, "message">>({
+      message: {
+        message_id: 2,
+        date: 0,
+        chat,
+        from: SAM,
+        text: "/g make it blue",
+        entities: [{ type: "bot_command", offset: 0, length: 2 }],
+        reply_to_message: {
+          message_id: 1,
+          date: 0,
+          chat,
+          photo: [90, 320, 1280].map((width) => ({
+            file_id: `photo-${width}`,
+            file_unique_id: "photo",
+            width,
+            height: (width * 3) / 4,
+          })),
+          reply_to_message: undefined,
+        },
+      },
+    });
+    const generate = spyOn(
+      imageProvider as ImageProvider,
+      "generate",
+    ).mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+    const download = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(new Uint8Array([8])))
+      .mockResolvedValueOnce(new Response(new Uint8Array([9])));
+    generateText.mockImplementationOnce(
+      async ({ tools }: { tools: ToolSet }) => {
+        await tools.editImage.execute?.({ prompt: "make it blue" }, {
+          toolCallId: "1",
+          messages: [],
+        } as ToolExecutionOptions);
+        return modelAnswer("");
+      },
+    );
+
+    try {
+      await handleMessage(ctx);
+    } finally {
+      download.mockRestore();
+    }
+
+    expect(payloadsOf("getFile")).toEqual([
+      { file_id: "photo-1280" },
+      { file_id: "photo-320" },
+    ]);
+    expect(generate).toHaveBeenLastCalledWith({
+      prompt: "make it blue",
+      inputs: [Buffer.from([9])],
+    });
+    expect(payloadsOf("sendPhoto")).toHaveLength(1);
   });
 
   test("announces an automatic compaction after the answer", async () => {

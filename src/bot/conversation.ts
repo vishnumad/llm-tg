@@ -4,7 +4,7 @@ import { generateReply } from "../ai/chat";
 import { autoCompact } from "../ai/compaction";
 import { logger } from "../logger";
 import { commands, formatCompactionNotice } from "./commands";
-import { downloadPhotos } from "./photos";
+import { downloadPhotos, downloadPhotosWithin } from "./photos";
 import { chatReplier, guestReplier, type Replier } from "./replier";
 import { extractPrompt, stripBotMention } from "./triggers";
 
@@ -35,6 +35,7 @@ async function respond(
         {
           text: prompt,
           images: await downloadPhotos(ctx),
+          loadImages: (maxSide) => downloadPhotosWithin(ctx, maxSide),
           context: {
             firstname: msg.from.first_name,
             userId: String(msg.from.id),

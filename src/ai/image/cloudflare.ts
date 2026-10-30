@@ -45,13 +45,17 @@ export function createCloudflareProvider({
 
   return {
     name: "cloudflare",
+    maxInputSide: 512,
 
-    async generate({ prompt, shape = "square" }) {
+    async generate({ prompt, shape = "square", inputs = [] }) {
       const { width, height } = SIZES[shape];
       const form = new FormData();
       form.append("prompt", prompt);
       form.append("width", String(width));
       form.append("height", String(height));
+      inputs.forEach((image, index) => {
+        form.append(`input_image_${index}`, new Blob([image]));
+      });
 
       const response = await fetch(url, {
         method: "POST",
@@ -65,7 +69,12 @@ export function createCloudflareProvider({
         throw new Error(describeFailure(response.status, body));
       }
 
-      logger.info("cloudflare.image", { modelId, width, height });
+      logger.info("cloudflare.image", {
+        modelId,
+        width,
+        height,
+        inputCount: inputs.length,
+      });
       return Buffer.from(image, "base64");
     },
   };

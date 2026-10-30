@@ -7,7 +7,7 @@ const options = { toolCallId: "1", messages: [] } as ToolExecutionOptions;
 const IMAGE = new Uint8Array([1, 2, 3]);
 
 function fakeProvider(generate = mock(async () => IMAGE)): ImageProvider {
-  return { name: "fake", generate };
+  return { name: "fake", maxInputSide: 512, generate };
 }
 
 describe("createImageTools", () => {
@@ -39,5 +39,22 @@ describe("createImageTools", () => {
       generateImage.execute?.({ prompt: "a fox" }, options),
     ).rejects.toThrow("rate limited");
     expect(sendImage).not.toHaveBeenCalled();
+  });
+
+  test("editImage draws from the user's photos, sized for the provider", async () => {
+    const provider = fakeProvider();
+    const sendImage = mock(async () => {});
+    const photos = [new Uint8Array([4]), new Uint8Array([5])];
+    const loadImages = mock(async () => photos);
+    const { editImage } = createImageTools(provider, sendImage, loadImages);
+
+    await editImage.execute?.({ prompt: "make it blue" }, options);
+
+    expect(loadImages).toHaveBeenCalledWith(512);
+    expect(provider.generate).toHaveBeenCalledWith({
+      prompt: "make it blue",
+      inputs: photos,
+    });
+    expect(sendImage).toHaveBeenCalledWith(IMAGE);
   });
 });

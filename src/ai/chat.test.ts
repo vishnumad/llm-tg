@@ -10,6 +10,7 @@ const message: UserMessage = {
   text: "hello",
   context: { firstname: "Sam", userId: "7", timestamp: "now" },
   images: [],
+  loadImages: async () => [],
 };
 
 const reply: ModelMessage = {
@@ -162,7 +163,7 @@ describe("generateReply", () => {
     expect(getChat(chatId).history).toEqual([]);
   });
 
-  test("offers image generation only when the reply can send images", async () => {
+  test("offers image tools only when the reply can send images, and editing only with a photo", async () => {
     const answer = {
       text: "Hi!",
       response: { messages: [reply] },
@@ -171,14 +172,21 @@ describe("generateReply", () => {
     };
     generateText.mockResolvedValue(answer);
 
+    const withPhoto: UserMessage = {
+      ...message,
+      images: [{ type: "file", mediaType: "image/jpeg", data: "AQID" }],
+    };
+
     await generateReply(uniqueChatId(), message);
     await generateReply(uniqueChatId(), message, async () => {});
+    await generateReply(uniqueChatId(), withPhoto, async () => {});
 
-    const [withoutImages, withImages] = generateText.mock.calls.map(
-      ([request]) => Object.keys(request.tools),
-    );
+    const [withoutImages, withImages, withPhotoTools] =
+      generateText.mock.calls.map(([request]) => Object.keys(request.tools));
     expect(withoutImages).not.toContain("generateImage");
     expect(withImages).toContain("generateImage");
+    expect(withImages).not.toContain("editImage");
+    expect(withPhotoTools).toContain("editImage");
   });
 
   test("accepts an empty answer once the model has sent an image", async () => {

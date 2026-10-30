@@ -45,6 +45,24 @@ describe("createCloudflareProvider", () => {
     ]);
   });
 
+  test("attaches input images in order", async () => {
+    const fetch = respondWith({ success: true, result: { image: "AQID" } });
+
+    await provider.generate({
+      prompt: "make it blue",
+      inputs: [new Uint8Array([4]), new Uint8Array([5, 6])],
+    });
+
+    const form = (fetch.mock.calls[0][1] as RequestInit).body as FormData;
+    const inputs = await Promise.all(
+      ["input_image_0", "input_image_1"].map(async (key) => [
+        ...(await (form.get(key) as Blob).bytes()),
+      ]),
+    );
+    expect(inputs).toEqual([[4], [5, 6]]);
+    expect(form.has("input_image_2")).toBe(false);
+  });
+
   test("draws a square by default", async () => {
     const fetch = respondWith({ success: true, result: { image: "AQID" } });
 
