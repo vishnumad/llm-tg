@@ -40,7 +40,7 @@ Image generation gives the chat model a `generateImage` tool, which sends the im
 
 The Cloudflare backend runs on Workers AI, whose free 10,000 neurons a day cover about 95 images from the default model. Past that, a Workers Free account gets a "quota used up" error until 00:00 UTC, and a Workers Paid account pays for the extra.
 
-A guest-mode reply is an inline message, and Telegram won't upload a new file into one. So the bot first posts the image to `TELEGRAM_UPLOAD_CHAT_ID` (a private channel where it's an admin, or your own chat with it), turns the placeholder into that photo, then deletes the upload. Without that chat, guest-mode replies don't get the tool.
+A guest-mode reply is an inline message, and Telegram won't upload a new file into one. So the bot first posts the image to `TELEGRAM_UPLOAD_CHAT_ID` (a private channel where it's an admin, or your own chat with it), turns the placeholder into that photo. The upload stays in that chat. Without that chat, guest-mode replies don't get the tool.
 
 Checks: `bun test`, `bun run typecheck`, `bun run lint` (`bun run format` to fix).
 

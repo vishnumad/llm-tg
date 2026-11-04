@@ -142,8 +142,8 @@ const MAX_CAPTION_LENGTH = 1024;
  * placeholder, and the answer is edited into it later.
  *
  * An inline edit can't upload a file, so an image first goes to the upload
- * chat to get a file id, and the placeholder becomes that photo. Without an
- * upload chat, a guest reply sends no images.
+ * chat to get a file id, and the placeholder becomes that photo. The upload
+ * stays in that chat. Without an upload chat, a guest reply sends no images.
  */
 export async function guestReplier(
   ctx: Filter<Context, "guest_message">,
@@ -182,12 +182,6 @@ export async function guestReplier(
       media: largest.file_id,
     });
     isPhoto = true;
-    // The file id stays valid once the upload is deleted.
-    await ctx.api
-      .deleteMessage(uploadChatId, upload.message_id)
-      .catch((error) =>
-        logger.error("guest.upload_cleanup_failed", error, { uploadChatId }),
-      );
   }
 
   const { TELEGRAM_UPLOAD_CHAT_ID } = config;

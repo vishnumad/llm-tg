@@ -377,24 +377,10 @@ describe("handleGuestMessage", () => {
           media: { type: "photo", media: "large" },
         },
       },
-      { method: "deleteMessage", payload: { chat_id: "-100", message_id: 99 } },
       {
         method: "editMessageCaption",
         payload: { inline_message_id: "inline", caption: "Here's your fox" },
       },
-    ]);
-  });
-
-  test("keeps the image when the upload chat can't be cleaned up", async () => {
-    failCall = ({ method }) =>
-      method === "deleteMessage" ? "Bad Request: not enough rights" : undefined;
-    generateText.mockImplementationOnce(drawsImage("Here's your fox"));
-
-    await handleGuestMessage(guestMention(uniqueChatId(), 1, "draw a fox"));
-
-    expect(payloadsOf("editMessageMedia")).toHaveLength(1);
-    expect(payloadsOf("editMessageCaption")).toMatchObject([
-      { caption: "Here's your fox" },
     ]);
   });
 
