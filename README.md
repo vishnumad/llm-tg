@@ -10,13 +10,22 @@ cp .env.sample .env   # fill in the keys
 bun run start
 ```
 
-Or with Docker:
+Or with Docker Compose, using the published image and a `.env` filled in from `.env.sample`:
 
-```sh
-docker compose up -d --build
+```yaml
+services:
+  bot:
+    image: ghcr.io/vishnumad/llm-tg:latest
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - chats:/app/data
+
+volumes:
+  chats:
 ```
 
-Chat history is kept in the `chats` volume. Run only one instance per bot token.
+Run only one instance per bot token.
 
 ## Configuration
 
@@ -43,7 +52,7 @@ Chat history is kept in the `chats` volume. Run only one instance per bot token.
 | `GEMINI_API_KEY` | Only when `SEARCH_PROVIDER=gemini` |
 | `WEB_SEARCH_MODEL_ID` | Only when `SEARCH_PROVIDER=gemini`, e.g. `gemini-2.5-flash-lite` |
 
-**Images (optional).** Lets the bot make and edit images through Cloudflare Workers AI. The free tier covers about 95 images a day.
+**Images (optional).** Lets the bot make and edit images through Cloudflare Workers AI.
 
 | Variable | |
 | --- | --- |
@@ -64,7 +73,7 @@ Chat history is kept in the `chats` volume. Run only one instance per bot token.
 
 ## Usage
 
-The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and replies to its own messages. With images on, send a photo or reply to one and ask for changes.
+The bot replies to `/g <message>` (also as a photo caption), `@mentions`, and replies to its own messages.
 
 - `/newchat` - clear history
 - `/compact` - summarize history to save tokens
