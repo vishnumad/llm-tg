@@ -182,12 +182,6 @@ export async function guestReplier(
       media: largest.file_id,
     });
     isPhoto = true;
-    // The file id stays valid once the upload is deleted.
-    await ctx.api
-      .deleteMessage(uploadChatId, upload.message_id)
-      .catch((error) =>
-        logger.error("guest.upload_cleanup_failed", error, { uploadChatId }),
-      );
   }
 
   const { TELEGRAM_UPLOAD_CHAT_ID } = config;
